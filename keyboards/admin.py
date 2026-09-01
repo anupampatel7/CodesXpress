@@ -69,8 +69,7 @@ def get_admin_coupons_keyboard(coupons: List[Coupon], page: int, total_pages: in
     buttons = []
     for c in coupons:
         status_tag = "🟢" if c.is_active else "🔴"
-        mode_tag = "📦" if c.stock_type == StockType.QUANTITY else "🔢"
-        btn_text = f"{status_tag} {mode_tag} {c.title} (Stock: {c.stock})"
+        btn_text = f"{status_tag} {c.title}"
         buttons.append([
             InlineKeyboardButton(
                 text=btn_text,
@@ -102,34 +101,66 @@ def get_admin_coupons_keyboard(coupons: List[Coupon], page: int, total_pages: in
 
 def get_admin_coupon_detail_keyboard(coupon: Coupon, page: int = 1) -> InlineKeyboardMarkup:
     """Action buttons for a single coupon in admin."""
-    toggle_text = "🚫 Disable" if coupon.is_active else "🟢 Enable"
+    status_toggle_text = "🟢 Active" if coupon.is_active else "🔴 Inactive"
     buttons = [
         [
             InlineKeyboardButton(
-                text="📦 Restock Coupon",
-                callback_data=AdminCouponCallback(action="add_codes", coupon_id=coupon.id, page=page).pack(),
+                text="✏️ Edit Name",
+                callback_data=AdminCouponCallback(action="edit_name", coupon_id=coupon.id, page=page).pack(),
             ),
             InlineKeyboardButton(
-                text="📊 Stock",
+                text="📝 Edit Description",
+                callback_data=AdminCouponCallback(action="edit_desc", coupon_id=coupon.id, page=page).pack(),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="⭐ Edit Points",
+                callback_data=AdminCouponCallback(action="edit_points", coupon_id=coupon.id, page=page).pack(),
+            ),
+            InlineKeyboardButton(
+                text="🎟️ Manage Codes",
                 callback_data=AdminCouponCallback(action="view_codes", coupon_id=coupon.id, page=page).pack(),
             ),
         ],
         [
             InlineKeyboardButton(
-                text="✏️ Edit",
-                callback_data=AdminCouponCallback(action="edit", coupon_id=coupon.id, page=page).pack(),
+                text=status_toggle_text,
+                callback_data=AdminCouponCallback(action="toggle", coupon_id=coupon.id, page=page).pack(),
             ),
             InlineKeyboardButton(
-                text=toggle_text,
-                callback_data=AdminCouponCallback(action="toggle", coupon_id=coupon.id, page=page).pack(),
+                text="🗑 Delete",
+                callback_data=AdminCouponCallback(action="delete", coupon_id=coupon.id, page=page).pack(),
             ),
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ Back to List",
+                text="↩️ Back",
                 callback_data=AdminNavCallback(section="coupons", page=page).pack(),
             ),
-            InlineKeyboardButton(text="👑 Admin Panel", callback_data="admin_dashboard"),
+        ],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_admin_coupon_codes_keyboard(coupon_id: int, page: int = 1) -> InlineKeyboardMarkup:
+    """Buttons for managing codes of a coupon."""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="➕ Add Codes",
+                callback_data=AdminCouponCallback(action="add_codes", coupon_id=coupon_id, page=page).pack(),
+            ),
+            InlineKeyboardButton(
+                text="🗑️ Clear Unused Codes",
+                callback_data=AdminCouponCallback(action="clear_unused_codes", coupon_id=coupon_id, page=page).pack(),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="↩️ Back to Coupon",
+                callback_data=AdminCouponCallback(action="view", coupon_id=coupon_id, page=page).pack(),
+            ),
         ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

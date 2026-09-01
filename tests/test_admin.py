@@ -460,3 +460,137 @@ async def test_e2e_add_coupon_fsm_flow(db_session: AsyncSession):
     assert "out of stock" in msg5.lower()
 
 
+@pytest.mark.asyncio
+async def test_admin_coupon_edit_preserves_codes_and_no_duplicates(db_session: AsyncSession):
+    """Verify editing coupon details updates existing record in-place and preserves all codes & redemptions."""
+    from sqlalchemy import select, func
+
+    # 1. Create coupon with initial codes
+    coupon = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Swiggy ₹150 OFF",
+        brand="Swiggy",
+        points_required=5,
+        stock_type=StockType.UNIQUE_CODES,
+        description="Initial description",
+    )
+    await db_session.flush()
+    coupon_pk = coupon.id
+
+    await StockService.bulk_import_unique_codes(db_session, 999, coupon.id, "SWIGGY01\nSWIGGY02")
+    await db_session.commit()
+
+    # User redeems first code
+    user, _, _ = await UserService.get_or_create_user(db_session, 987654, first_name="Foodie")
+    user.points = 10
+    await db_session.commit()
+    s_red, _, redemption = await CouponService.redeem_coupon(db_session, user.id, coupon.id)
+    await db_session.commit()
+    assert s_red is True
+    assert redemption.coupon_code == "SWIGGY01"
+
+    # Count coupons before edit
+    total_coupons_before = (await db_session.execute(select(func.count(Coupon.id)))).scalar()
+
+    # 2. Perform Edit via CouponService.update_coupon
+    s_edit, _, updated_coupon = await CouponService.update_coupon(
+        session=db_session,
+        admin_id=999,
+        coupon_id=coupon_pk,
+        title="Swiggy ₹200 Mega OFF",
+        description="Updated delicious description",
+        points_required=8,
+    )
+    await db_session.commit()
+    assert s_edit is True
+    assert updated_coupon.id == coupon_pk  # Exact same record
+
+    # Count coupons after edit -> must be identical (no duplicate created)
+    total_coupons_after = (await db_session.execute(select(func.count(Coupon.id)))).scalar()
+    assert total_coupons_after == total_coupons_before
+
+    # Check database fields
+    refreshed = (await db_session.execute(select(Coupon).where(Coupon.id == coupon_pk))).scalar_one()
+    assert refreshed.title == "Swiggy ₹200 Mega OFF"
+    assert refreshed.description == "Updated delicious description"
+    assert refreshed.points_required == 8
+
+    # Check codes are still intact
+    codes = (await db_session.execute(select(CouponCode).where(CouponCode.coupon_id == coupon_pk))).scalars().all()
+    assert len(codes) == 2
+    used_code = next(c for c in codes if c.code == "SWIGGY01")
+    avail_code = next(c for c in codes if c.code == "SWIGGY02")
+    assert used_code.status == CodeStatus.USED
+    assert used_code.assigned_to_user_id == user.id
+    assert avail_code.status == CodeStatus.AVAILABLE
+
+    # Available stock is still 1
+    avail_stock = await StockService.get_authoritative_stock(db_session, refreshed)
+    assert avail_stock == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_clear_unused_codes_preserves_used(db_session: AsyncSession):
+    """Verify removing unused codes deletes ONLY AVAILABLE codes and NEVER touches USED codes."""
+    from sqlalchemy import select
+
+    coupon = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Clear Codes Test",
+        brand="BrandC",
+        points_required=2,
+        stock_type=StockType.UNIQUE_CODES,
+    )
+    await db_session.flush()
+
+    await StockService.bulk_import_unique_codes(db_session, 999, coupon.id, "USED01\nUNUSED02\nUNUSED03")
+    await db_session.commit()
+
+    # User redeems USED01
+    user, _, _ = await UserService.get_or_create_user(db_session, 123999, first_name="Consumer")
+    user.points = 10
+    await db_session.commit()
+    await CouponService.redeem_coupon(db_session, user.id, coupon.id)
+    await db_session.commit()
+
+    # Clear unused codes
+    s_clear, msg, removed_count = await StockService.remove_unused_codes(db_session, 999, coupon.id)
+    await db_session.commit()
+
+    assert s_clear is True
+    assert removed_count == 2  # UNUSED02 and UNUSED03 removed
+
+    # Query codes remaining in database
+    remaining_codes = (await db_session.execute(select(CouponCode).where(CouponCode.coupon_id == coupon.id))).scalars().all()
+    assert len(remaining_codes) == 1
+    assert remaining_codes[0].code == "USED01"
+    assert remaining_codes[0].status == CodeStatus.USED
+
+    # Stock is now 0 available
+    rem_stock = await StockService.get_authoritative_stock(db_session, coupon)
+    assert rem_stock == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_coupons_keyboard_has_no_numeric_emojis():
+    """Verify that coupon buttons in admin keyboard have NO 1️⃣, 2️⃣, 3️⃣, 4️⃣, or 🔢 emojis."""
+    from keyboards.admin import get_admin_coupons_keyboard
+
+    c1 = Coupon(id=1, title="Amazon ₹100", is_active=True, stock_type=StockType.UNIQUE_CODES, stock=5)
+    c2 = Coupon(id=2, title="Flipkart ₹50", is_active=False, stock_type=StockType.QUANTITY, stock=0)
+
+    kb = get_admin_coupons_keyboard([c1, c2], page=1, total_pages=1)
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    for text in btn_texts:
+        for forbidden in ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢"):
+            assert forbidden not in text, f"Found forbidden numeric emoji {forbidden} in button text: '{text}'"
+
+    # Verify presence of green indicator and clean name
+    assert "🟢 Amazon ₹100" in btn_texts
+    assert "🔴 Flipkart ₹50" in btn_texts
+
+
+

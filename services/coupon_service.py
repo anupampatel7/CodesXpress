@@ -472,6 +472,7 @@ class CouponService:
         category: Optional[CouponCategory] = None,
         value: Optional[str] = None,
         points_required: Optional[int] = None,
+        description: Optional[str] = None,
         code: Optional[str] = None,
         terms: Optional[str] = None,
         max_redemptions_per_user: Optional[int] = None,
@@ -497,6 +498,9 @@ class CouponService:
         if points_required is not None and points_required >= 0:
             coupon.points_required = points_required
             changes.append(f"Points -> {points_required}")
+        if description is not None:
+            coupon.description = description.strip()
+            changes.append("Description updated")
         if code is not None and coupon.stock_type == StockType.QUANTITY:
             coupon.code = code.strip()
             changes.append(f"Code -> {code}")

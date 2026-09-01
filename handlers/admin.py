@@ -38,6 +38,7 @@ from keyboards.admin import (
     get_admin_main_keyboard,
     get_admin_coupons_keyboard,
     get_admin_coupon_detail_keyboard,
+    get_admin_coupon_codes_keyboard,
     get_admin_channels_keyboard,
     get_admin_channel_detail_keyboard,
     get_admin_user_detail_keyboard,
@@ -212,14 +213,17 @@ async def handle_admin_coupon_view(
         return
 
     available_stock = await StockService.get_authoritative_stock(session, coupon)
+    status_text = "🟢 Active" if coupon.is_active else "🔴 Inactive"
+    desc_text = coupon.description.strip() if coupon.description else "<i>No description</i>"
 
     text = (
-        f"🎁 <b>{escape(coupon.title)}</b>\n\n"
-        f"💎 Value: {escape(coupon.value)}\n"
-        f"⭐ Redeem: {coupon.points_required} Points\n"
-        f"📦 Available: {available_stock}"
+        f"🎟 <b>{escape(coupon.title)}</b>\n\n"
+        f"📝 {escape(desc_text)}\n\n"
+        f"⭐ <b>Points Required:</b> {coupon.points_required}\n"
+        f"📦 <b>Available Codes:</b> {available_stock}\n"
+        f"{status_text}"
     )
-    kb = get_admin_coupon_detail_keyboard(coupon)
+    kb = get_admin_coupon_detail_keyboard(coupon, page=callback_data.page)
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
@@ -242,12 +246,27 @@ async def handle_admin_coupon_toggle(
         admin_id=callback.from_user.id,
         coupon_id=callback_data.coupon_id,
     )
+    await session.commit()
     await callback.answer(msg, show_alert=True)
+
     # Refresh view
     coupon = await CouponService.get_coupon_by_id(session, callback_data.coupon_id)
     if coupon:
-        kb = get_admin_coupon_detail_keyboard(coupon)
-        await callback.message.edit_reply_markup(reply_markup=kb)
+        available_stock = await StockService.get_authoritative_stock(session, coupon)
+        status_text = "🟢 Active" if coupon.is_active else "🔴 Inactive"
+        desc_text = coupon.description.strip() if coupon.description else "<i>No description</i>"
+        text = (
+            f"🎟 <b>{escape(coupon.title)}</b>\n\n"
+            f"📝 {escape(desc_text)}\n\n"
+            f"⭐ <b>Points Required:</b> {coupon.points_required}\n"
+            f"📦 <b>Available Codes:</b> {available_stock}\n"
+            f"{status_text}"
+        )
+        kb = get_admin_coupon_detail_keyboard(coupon, page=callback_data.page)
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(AdminCouponCallback.filter(F.action == "delete"))
@@ -265,6 +284,7 @@ async def handle_admin_coupon_delete(
         admin_id=callback.from_user.id,
         coupon_id=callback_data.coupon_id,
     )
+    await session.commit()
     await callback.answer(msg, show_alert=True)
     # Return to coupons list
     coupons, total, total_pages = await CouponService.get_all_coupons_admin(session, page=1)
@@ -289,33 +309,19 @@ async def handle_admin_coupon_view_codes(
 
     codes, breakdown = await StockService.get_coupon_codes(session, coupon.id, limit=25)
     text = (
-        f"🔢 <b>Codes Inventory for: {coupon.title}</b>\n\n"
+        f"🎟️ <b>Manage Codes: {escape(coupon.title)}</b>\n\n"
         f"🟢 Available: <b>{breakdown.get('AVAILABLE', 0)}</b> | "
-        f"🔴 Used: <b>{breakdown.get('USED', 0)}</b> | "
-        f"🟡 Reserved: <b>{breakdown.get('RESERVED', 0)}</b>\n\n"
-        f"<b>Recent Codes (Up to 25):</b>\n"
+        f"🔴 Used: <b>{breakdown.get('USED', 0)}</b>\n\n"
+        f"<b>Recent Codes:</b>\n"
     )
     if not codes:
-        text += "<i>No codes imported yet. Click 'Add Codes' to upload codes.</i>\n"
+        text += "<i>No codes imported yet. Click 'Add Codes' to restock.</i>\n"
     else:
         for c in codes:
-            status_tag = "🟢 AVAIL" if c.status == CodeStatus.AVAILABLE else f"🔴 USED (User #{c.assigned_to_user_id})"
-            text += f"• <code>{c.code}</code> — {status_tag}\n"
+            status_tag = "🟢 Available" if c.status == CodeStatus.AVAILABLE else f"🔴 Used (User #{c.assigned_to_user_id})"
+            text += f"• <code>{escape(c.code)}</code> — {status_tag}\n"
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➕ Add More Codes",
-                    callback_data=AdminCouponCallback(action="add_codes", coupon_id=coupon.id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="⬅️ Back to Coupon",
-                    callback_data=AdminCouponCallback(action="view", coupon_id=coupon.id).pack(),
-                ),
-            ]
-        ]
-    )
+    kb = get_admin_coupon_codes_keyboard(coupon.id, page=callback_data.page)
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
@@ -323,15 +329,57 @@ async def handle_admin_coupon_view_codes(
     await callback.answer()
 
 
-@router.callback_query(AdminCouponCallback.filter(F.action == "edit"))
-async def handle_admin_coupon_edit_start(
+@router.callback_query(AdminCouponCallback.filter(F.action == "clear_unused_codes"))
+async def handle_admin_coupon_clear_unused_codes(
+    callback: CallbackQuery,
+    callback_data: AdminCouponCallback,
+    session: AsyncSession,
+    is_admin: bool,
+) -> None:
+    """Remove all unused (AVAILABLE) coupon codes for a coupon."""
+    if not await require_admin(callback, is_admin):
+        return
+    success, msg, removed_count = await StockService.remove_unused_codes(
+        session=session,
+        admin_id=callback.from_user.id,
+        coupon_id=callback_data.coupon_id,
+    )
+    await session.commit()
+    await callback.answer(msg, show_alert=True)
+
+    # Refresh view_codes screen
+    coupon = await CouponService.get_coupon_by_id(session, callback_data.coupon_id)
+    if coupon:
+        codes, breakdown = await StockService.get_coupon_codes(session, coupon.id, limit=25)
+        text = (
+            f"🎟️ <b>Manage Codes: {escape(coupon.title)}</b>\n\n"
+            f"🟢 Available: <b>{breakdown.get('AVAILABLE', 0)}</b> | "
+            f"🔴 Used: <b>{breakdown.get('USED', 0)}</b>\n\n"
+            f"<b>Recent Codes:</b>\n"
+        )
+        if not codes:
+            text += "<i>No codes available. Click 'Add Codes' to restock.</i>\n"
+        else:
+            for c in codes:
+                status_tag = "🟢 Available" if c.status == CodeStatus.AVAILABLE else f"🔴 Used (User #{c.assigned_to_user_id})"
+                text += f"• <code>{escape(c.code)}</code> — {status_tag}\n"
+
+        kb = get_admin_coupon_codes_keyboard(coupon.id, page=callback_data.page)
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(AdminCouponCallback.filter(F.action.in_({"edit_name", "edit_desc", "edit_points", "edit"})))
+async def handle_admin_coupon_edit_action(
     callback: CallbackQuery,
     callback_data: AdminCouponCallback,
     session: AsyncSession,
     state: FSMContext,
     is_admin: bool,
 ) -> None:
-    """Prompt admin to select which field of the coupon to edit."""
+    """Prompt admin for specific coupon field edit."""
     if not await require_admin(callback, is_admin):
         return
     coupon = await CouponService.get_coupon_by_id(session, callback_data.coupon_id)
@@ -339,64 +387,25 @@ async def handle_admin_coupon_edit_start(
         await callback.answer("Coupon not found.", show_alert=True)
         return
 
-    await state.set_state(EditCouponState.field)
-    await state.update_data(coupon_id=coupon.id)
+    action = callback_data.action
+    if action == "edit_name":
+        field = "title"
+    elif action == "edit_desc":
+        field = "description"
+    elif action == "edit_points":
+        field = "points"
+    else:
+        field = "title"
 
-    buttons = [
-        [
-            InlineKeyboardButton(text="🏷️ Title", callback_data="edfield_title"),
-            InlineKeyboardButton(text="🏢 Brand", callback_data="edfield_brand"),
-        ],
-        [
-            InlineKeyboardButton(text="💰 Value", callback_data="edfield_value"),
-            InlineKeyboardButton(text="⭐ Points Required", callback_data="edfield_points"),
-        ],
-        [
-            InlineKeyboardButton(text="📜 Terms", callback_data="edfield_terms"),
-            InlineKeyboardButton(text="🔢 Max Per User", callback_data="edfield_max_user"),
-        ],
-    ]
-    if coupon.stock_type == StockType.QUANTITY:
-        buttons.append([
-            InlineKeyboardButton(text="🎟️ Promo Code", callback_data="edfield_code")
-        ])
-    buttons.append([
-        InlineKeyboardButton(text="❌ Cancel", callback_data="admin_cancel_fsm")
-    ])
-
-    text = f"✏️ <b>Edit Coupon:</b> {coupon.title}\n\nAap is coupon ka kaun sa field change karna chahte hain?"
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("edfield_"))
-async def handle_admin_coupon_edit_field_select(
-    callback: CallbackQuery,
-    state: FSMContext,
-    is_admin: bool,
-) -> None:
-    """Handle field selection for coupon editing."""
-    if not await require_admin(callback, is_admin):
-        return
-    field_name = callback.data.split("_", 1)[1]
-    await state.update_data(field=field_name)
     await state.set_state(EditCouponState.new_value)
+    await state.update_data(coupon_id=coupon.id, field=field, page=callback_data.page)
 
     prompt_map = {
-        "title": "Naya <b>Title</b> type karein (e.g. <i>Amazon ₹200 Voucher</i>):",
-        "brand": "Naya <b>Brand</b> name type karein (e.g. <i>Amazon</i>):",
-        "value": "Nayi <b>Value</b> type karein (e.g. <i>₹200</i>, <i>30% OFF</i>):",
-        "points": "Naye <b>Points Required</b> type karein (positive integer >= 0):",
-        "terms": "Naye <b>Terms & Conditions</b> type karein:",
-        "max_user": "Naya <b>Max Redemptions Per User</b> limit type karein (integer >= 1):",
-        "code": "Naya <b>Promo Code</b> type karein:",
+        "title": f"✏️ <b>Edit Coupon Name:</b>\nCurrent: <b>{escape(coupon.title)}</b>\n\nEnter new Coupon Name:",
+        "description": f"📝 <b>Edit Description:</b>\nCurrent:\n{escape(coupon.description or 'None')}\n\nEnter new Coupon Description:",
+        "points": f"⭐ <b>Edit Points:</b>\nCurrent: <b>{coupon.points_required} Points</b>\n\nEnter new Points Required (positive integer):",
     }
-
-    prompt = prompt_map.get(field_name, "Nayi value enter karein:")
+    prompt = prompt_map.get(field, "Enter new value:")
     kb = get_admin_cancel_keyboard()
     try:
         await callback.message.edit_text(prompt, reply_markup=kb, parse_mode="HTML")
@@ -418,36 +427,27 @@ async def handle_admin_coupon_edit_value_submit(
     data = await state.get_data()
     coupon_id = data.get("coupon_id")
     field = data.get("field")
+    page = data.get("page", 1)
     await state.clear()
 
     val_text = message.text.strip() if message.text else ""
     update_kwargs = {}
 
-    if field == "title":
-        if len(val_text) < 3:
-            await message.answer("Title too short. Edit cancelled.", reply_markup=get_admin_main_keyboard())
+    if field in ("title", "name"):
+        if not val_text:
+            await message.answer("Name cannot be empty. Edit cancelled.", reply_markup=get_admin_main_keyboard())
             return
         update_kwargs["title"] = val_text
-    elif field == "brand":
-        update_kwargs["brand"] = val_text
-    elif field == "value":
-        update_kwargs["value"] = val_text
+        update_kwargs["brand"] = val_text.split()[0] if val_text.split() else "Brand"
+    elif field == "description":
+        update_kwargs["description"] = val_text
+        update_kwargs["terms"] = val_text
     elif field == "points":
         pts = validate_positive_int(val_text)
-        if pts is None and val_text != "0":
-            await message.answer("Invalid points value. Edit cancelled.", reply_markup=get_admin_main_keyboard())
+        if pts is None:
+            await message.answer("Points must be a positive number. Edit cancelled.", reply_markup=get_admin_main_keyboard())
             return
-        update_kwargs["points_required"] = 0 if val_text == "0" else pts
-    elif field == "terms":
-        update_kwargs["terms"] = val_text
-    elif field == "max_user":
-        max_u = validate_positive_int(val_text)
-        if not max_u:
-            await message.answer("Invalid limit. Must be >= 1. Edit cancelled.", reply_markup=get_admin_main_keyboard())
-            return
-        update_kwargs["max_redemptions_per_user"] = max_u
-    elif field == "code":
-        update_kwargs["code"] = sanitize_coupon_code(val_text)
+        update_kwargs["points_required"] = pts
 
     success, msg, coupon = await CouponService.update_coupon(
         session=session,
@@ -455,13 +455,22 @@ async def handle_admin_coupon_edit_value_submit(
         coupon_id=coupon_id,
         **update_kwargs,
     )
+    await session.commit()
 
     if success and coupon:
-        await message.answer(
-            f"✅ <b>Coupon Updated Successfully!</b>\n\n<b>{coupon.title}</b> ({coupon.brand})",
-            reply_markup=get_admin_main_keyboard(),
-            parse_mode="HTML",
+        available_stock = await StockService.get_authoritative_stock(session, coupon)
+        status_text = "🟢 Active" if coupon.is_active else "🔴 Inactive"
+        desc_text = coupon.description.strip() if coupon.description else "<i>No description</i>"
+        text = (
+            f"✅ <b>Coupon Updated</b>\n\n"
+            f"🎟 <b>{escape(coupon.title)}</b>\n\n"
+            f"📝 {escape(desc_text)}\n\n"
+            f"⭐ <b>Points Required:</b> {coupon.points_required}\n"
+            f"📦 <b>Available Codes:</b> {available_stock}\n"
+            f"{status_text}"
         )
+        kb = get_admin_coupon_detail_keyboard(coupon, page=page)
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
     else:
         await message.answer(f"❌ {msg}", reply_markup=get_admin_main_keyboard())
 

@@ -3,7 +3,7 @@
 import logging
 from typing import Tuple, Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, and_
+from sqlalchemy import select, update, delete, func, and_
 from models.coupon import Coupon, StockType
 from models.coupon_code import CouponCode, CodeStatus
 from models.admin_action import AdminAction
@@ -183,3 +183,43 @@ class StockService:
             breakdown[key] = count
 
         return codes, breakdown
+
+    @staticmethod
+    async def remove_unused_codes(
+        session: AsyncSession,
+        admin_id: int,
+        coupon_id: int,
+    ) -> Tuple[bool, str, int]:
+        """Remove only unused (AVAILABLE) coupon codes for a coupon.
+
+        Guarantees: USED codes are NEVER deleted or reassigned.
+        """
+        stmt = select(Coupon).where(Coupon.id == coupon_id)
+        coupon = (await session.execute(stmt)).scalar_one_or_none()
+        if not coupon:
+            return False, "Coupon not found.", 0
+
+        # Delete only AVAILABLE codes
+        del_stmt = (
+            delete(CouponCode)
+            .where(
+                CouponCode.coupon_id == coupon_id,
+                CouponCode.status == CodeStatus.AVAILABLE,
+            )
+        )
+        del_res = await session.execute(del_stmt)
+        removed_count = del_res.rowcount or 0
+
+        # Recalculate authoritative stock
+        await StockService.get_authoritative_stock(session, coupon)
+
+        audit = AdminAction(
+            admin_id=admin_id,
+            action="CLEAR_UNUSED_CODES",
+            target=f"Coupon #{coupon.id} ({coupon.title})",
+            details=f"Removed {removed_count} available codes. Used codes preserved.",
+        )
+        session.add(audit)
+        await session.flush()
+
+        return True, f"Removed {removed_count} unused code(s). Used codes remain intact.", removed_count
