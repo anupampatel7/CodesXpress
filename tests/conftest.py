@@ -26,9 +26,10 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(autouse=True)
 async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
-    """Provide an in-memory SQLite engine for testing."""
+    """Provide an in-memory SQLite engine for testing and patch database module."""
+    import database
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         echo=False,
@@ -37,7 +38,23 @@ async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
+    orig_engine = database.engine
+    orig_factory = database.async_session_factory
+    database.engine = engine
+    database.async_session_factory = session_factory
+
     yield engine
+
+    database.engine = orig_engine
+    database.async_session_factory = orig_factory
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

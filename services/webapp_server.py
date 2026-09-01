@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from aiohttp import web
 from config import settings, BASE_DIR
-from database import async_session_factory
+import database
 from services.device_service import DeviceService
 from utils.security import validate_telegram_webapp_init_data
 
@@ -46,7 +46,7 @@ async def handle_post_verify_device(request: web.Request) -> web.Response:
     client_ip = request.remote or request.headers.get("X-Forwarded-For", "")
 
     # 2. Atomic Device Binding & Anti-Fraud check
-    async with async_session_factory() as session:
+    async with database.async_session_factory() as session:
         success, code, binding = await DeviceService.verify_and_bind_device(
             session=session,
             telegram_user_id=telegram_user_id,
