@@ -1483,9 +1483,28 @@ async def handle_admin_backup(
     if not await require_admin(event, is_admin):
         return
 
+    from config import settings
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        msg = (
+            "ℹ️ <b>PostgreSQL Production Database</b>\n\n"
+            "Automated backups, point-in-time recovery, and cloud snapshots are managed directly via your Render PostgreSQL dashboard."
+        )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="👑 Admin Dashboard", callback_data="admin_dashboard")]]
+        )
+        if isinstance(event, Message):
+            await event.answer(msg, reply_markup=kb, parse_mode="HTML")
+        else:
+            try:
+                await event.message.edit_text(msg, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await event.message.answer(msg, reply_markup=kb, parse_mode="HTML")
+            await event.answer()
+        return
+
     backup_path = create_sqlite_backup()
     if not backup_path or not backup_path.exists():
-        msg = "❌ Failed to create database backup or non-SQLite database in use."
+        msg = "❌ Failed to create SQLite database backup."
         if isinstance(event, Message):
             await event.answer(msg)
         else:

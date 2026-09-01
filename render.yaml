@@ -1,0 +1,38 @@
+services:
+  - type: worker
+    name: codes-xpress-bot
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codes-xpress-db
+          property: connectionString
+      - key: CHANNEL_1
+        value: "@OfferRaider"
+      - key: CHANNEL_2
+        value: "@OfferMate"
+      - key: CHANNEL_3
+        value: "@Grabmint"
+      - key: WEBAPP_URL
+        sync: false
+      - key: WEBAPP_HOST
+        value: "0.0.0.0"
+      - key: WEBAPP_PORT
+        value: "8080"
+      - key: LOG_LEVEL
+        value: "INFO"
+
+databases:
+  - name: codes-xpress-db
+    region: oregon
+    plan: free

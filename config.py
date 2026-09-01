@@ -25,6 +25,40 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 
+def normalize_database_url(url: str) -> str:
+    """Normalize database connection string for SQLAlchemy async drivers."""
+    if not url:
+        return url
+    cleaned = url.strip().strip('"').strip("'")
+    if cleaned.startswith("postgres://"):
+        cleaned = "postgresql+asyncpg://" + cleaned[len("postgres://"):]
+    elif cleaned.startswith("postgresql://") and not cleaned.startswith("postgresql+"):
+        cleaned = "postgresql+asyncpg://" + cleaned[len("postgresql://"):]
+    elif cleaned.startswith("postgresql+psycopg2://"):
+        cleaned = "postgresql+asyncpg://" + cleaned[len("postgresql+psycopg2://"):]
+
+    if "sslmode=require" in cleaned:
+        cleaned = cleaned.replace("sslmode=require", "ssl=require")
+    return cleaned
+
+
+def mask_database_url(url: str) -> str:
+    """Mask sensitive database credentials for safe logging."""
+    if not url:
+        return "Not Configured"
+    if url.startswith("sqlite"):
+        return "SQLite (local development)"
+    try:
+        if "@" in url:
+            scheme, rest = url.split("://", 1)
+            _, host_part = rest.split("@", 1)
+            host_clean = host_part.split("?")[0]
+            return f"{scheme}://****:****@{host_clean}"
+        return "PostgreSQL (configured)"
+    except Exception:
+        return "Database (configured)"
+
+
 class Settings(BaseSettings):
     """Application configuration schema."""
 
@@ -110,6 +144,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def validate_database_url(cls, v: Any) -> str:
+        if not v:
+            return f"sqlite+aiosqlite:///{DATA_DIR.as_posix()}/bot.db"
+        return normalize_database_url(str(v))
 
     @field_validator("ADMIN_ID", mode="before")
     @classmethod

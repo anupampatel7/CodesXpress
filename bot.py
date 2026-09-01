@@ -15,7 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault
 from aiogram.client.default import DefaultBotProperties
 
-from config import settings
+from config import settings, mask_database_url
 from database import init_db, async_session_factory
 from handlers import setup_routers
 from middlewares import DbSessionMiddleware, AuthMiddleware
@@ -90,7 +90,7 @@ async def main() -> None:
     logger.info(f"Admin authorization configured: {'YES' if settings.ADMIN_ID else 'NO'}")
     logger.info(f"Primary admin ID configured: {'YES' if settings.ADMIN_ID else 'NO'}")
     logger.info(f"Total admin accounts active: {len(settings.admin_ids)}")
-    logger.info(f"Database: {settings.DATABASE_URL.split('@')[-1]}")
+    logger.info(f"Database: {mask_database_url(settings.DATABASE_URL)}")
     logger.info("=" * 60)
 
     # Validate bot token

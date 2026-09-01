@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy import event
-from config import settings
+from config import settings, mask_database_url
 from models.base import Base
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,13 @@ else:
     engine_kwargs["pool_size"] = 10
     engine_kwargs["max_overflow"] = 20
     engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_recycle"] = 300
 
 # Create async engine
 engine: AsyncEngine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 
 
-# Enforce foreign keys and WAL mode on SQLite connections
+# Enforce foreign keys and WAL mode on SQLite connections only
 if is_sqlite:
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -62,10 +63,10 @@ async_session_factory = async_sessionmaker(
 
 async def init_db() -> None:
     """Initialize database schemas and create tables if they do not exist."""
-    logger.info("Initializing database schema...")
+    logger.info(f"Initializing database schema on {mask_database_url(settings.DATABASE_URL)}...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables initialized successfully.")
+    logger.info("Database schema initialized successfully.")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
