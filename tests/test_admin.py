@@ -315,3 +315,148 @@ async def test_require_admin_guard():
     assert unauth_cb_res is False
     unauth_cb.answer.assert_called_once_with("❌ Unauthorized access.", show_alert=True)
 
+
+@pytest.mark.asyncio
+async def test_e2e_add_coupon_fsm_flow(db_session: AsyncSession):
+    """End-to-end test of the complete 4-step Add Coupon FSM and sequential redemptions."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.fsm.storage.memory import MemoryStorage
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+    from handlers.admin import (
+        AddCouponState,
+        handle_add_coupon_start,
+        handle_add_coupon_name,
+        handle_add_coupon_description,
+        handle_add_coupon_points,
+        handle_add_coupon_codes,
+    )
+    from services.coupon_service import CouponService
+    from services.user_service import UserService
+    from models.coupon_code import CouponCode, CodeStatus
+    from sqlalchemy import select
+
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=1, chat_id=999, user_id=999)
+    state = FSMContext(storage=storage, key=key)
+
+    # 1. Start wizard
+    cb_start = MagicMock()
+    cb_start.from_user = MagicMock(id=999)
+    cb_start.message = MagicMock()
+    cb_start.message.edit_text = AsyncMock()
+    cb_start.answer = AsyncMock()
+
+    await handle_add_coupon_start(cb_start, state, is_admin=True)
+    current_state = await state.get_state()
+    assert current_state == AddCouponState.name.state
+
+    # 2. Step 1: Send Name
+    msg_name = MagicMock()
+    msg_name.from_user = MagicMock(id=999)
+    msg_name.text = "Myntra ₹200 OFF"
+    msg_name.answer = AsyncMock()
+
+    await handle_add_coupon_name(msg_name, state)
+    current_state = await state.get_state()
+    assert current_state == AddCouponState.description.state
+    data = await state.get_data()
+    assert data["name"] == "Myntra ₹200 OFF"
+
+    # 3. Step 2: Send Description
+    msg_desc = MagicMock()
+    msg_desc.from_user = MagicMock(id=999)
+    msg_desc.text = "₹200 OFF on eligible Myntra orders."
+    msg_desc.answer = AsyncMock()
+
+    await handle_add_coupon_description(msg_desc, state)
+    current_state = await state.get_state()
+    assert current_state == AddCouponState.points.state
+    data = await state.get_data()
+    assert data["description"] == "₹200 OFF on eligible Myntra orders."
+
+    # 4. Step 3: Send Points Required
+    msg_pts = MagicMock()
+    msg_pts.from_user = MagicMock(id=999)
+    msg_pts.text = "6"
+    msg_pts.answer = AsyncMock()
+
+    await handle_add_coupon_points(msg_pts, state)
+    current_state = await state.get_state()
+    assert current_state == AddCouponState.codes.state
+    data = await state.get_data()
+    assert data["points"] == 6
+
+    # 5. Step 4: Send Codes (4 codes with whitespace / newlines)
+    msg_codes = MagicMock()
+    msg_codes.from_user = MagicMock(id=999)
+    msg_codes.text = "CODE001\nCODE002\nCODE003\nCODE004"
+    msg_codes.answer = AsyncMock()
+
+    await handle_add_coupon_codes(msg_codes, state, db_session, is_admin=True)
+
+    # Verify FSM is cleared
+    current_state = await state.get_state()
+    assert current_state is None
+
+    # Verify response was sent
+    msg_codes.answer.assert_called_once()
+    sent_text = msg_codes.answer.call_args[0][0]
+    assert "✅ <b>Coupon Added</b>" in sent_text
+    assert "Myntra ₹200 OFF" in sent_text
+    assert "6 Points" in sent_text
+    assert "4 codes added" in sent_text
+
+    # 6. Verify Database State
+    coupon = (await db_session.execute(select(Coupon).where(Coupon.title == "Myntra ₹200 OFF"))).scalar_one()
+    assert coupon.points_required == 6
+    assert coupon.description == "₹200 OFF on eligible Myntra orders."
+    assert coupon.stock == 4
+
+    codes_in_db = (await db_session.execute(select(CouponCode).where(CouponCode.coupon_id == coupon.id))).scalars().all()
+    assert len(codes_in_db) == 4
+    assert [c.code for c in codes_in_db] == ["CODE001", "CODE002", "CODE003", "CODE004"]
+    assert all(c.status == CodeStatus.AVAILABLE for c in codes_in_db)
+
+    # 7. Verify sequential redemptions consume CODE001, CODE002, CODE003, CODE004
+    u1, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=5001, first_name="U1")
+    u2, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=5002, first_name="U2")
+    u3, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=5003, first_name="U3")
+    u4, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=5004, first_name="U4")
+    u5, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=5005, first_name="U5")
+
+    for u in (u1, u2, u3, u4, u5):
+        u.points = 10
+    await db_session.commit()
+
+    # User 1 -> gets CODE001
+    s1, _, r1 = await CouponService.redeem_coupon(db_session, u1.id, coupon.id)
+    await db_session.commit()
+    assert s1 is True
+    assert r1.coupon_code == "CODE001"
+
+    # User 2 -> gets CODE002
+    s2, _, r2 = await CouponService.redeem_coupon(db_session, u2.id, coupon.id)
+    await db_session.commit()
+    assert s2 is True
+    assert r2.coupon_code == "CODE002"
+
+    # User 3 -> gets CODE003
+    s3, _, r3 = await CouponService.redeem_coupon(db_session, u3.id, coupon.id)
+    await db_session.commit()
+    assert s3 is True
+    assert r3.coupon_code == "CODE003"
+
+    # User 4 -> gets CODE004
+    s4, _, r4 = await CouponService.redeem_coupon(db_session, u4.id, coupon.id)
+    await db_session.commit()
+    assert s4 is True
+    assert r4.coupon_code == "CODE004"
+
+    # User 5 -> Out of stock (0 codes available)
+    s5, msg5, r5 = await CouponService.redeem_coupon(db_session, u5.id, coupon.id)
+    assert s5 is False
+    assert r5 is None
+    assert "out of stock" in msg5.lower()
+
+

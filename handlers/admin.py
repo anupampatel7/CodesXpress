@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+from html import escape
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -49,6 +50,7 @@ from utils.validators import (
     validate_channel_id,
     validate_date,
     sanitize_coupon_code,
+    parse_bulk_codes,
 )
 from sqlalchemy.orm import selectinload
 from utils.backup import create_sqlite_backup
@@ -698,59 +700,82 @@ async def handle_add_coupon_codes(
     is_admin: bool,
 ) -> None:
     """Handle Step 4: Coupon Codes & immediately create coupon."""
+    user_id = message.from_user.id if message.from_user else 0
+    logger.info(f"[ADD_COUPON] code_state_received from user={user_id}")
+
     if not await require_admin(message, is_admin):
+        logger.warning(f"[ADD_COUPON] Unauthorized access attempt by user={user_id}")
         return
+
     raw_text = message.text or ""
-    parsed_codes, _ = parse_bulk_codes(raw_text)
+    parsed_codes, total_raw = parse_bulk_codes(raw_text)
+    logger.info(f"[ADD_COUPON] codes_parsed={len(parsed_codes)} (total_raw={total_raw})")
+
     if not parsed_codes:
         await message.answer("Please enter at least one valid coupon code (one per line):")
         return
 
     data = await state.get_data()
-    await state.clear()
-
     name = data.get("name", "Coupon")
     desc = data.get("description", "")
     pts = data.get("points", 6)
     brand = name.split()[0] if name.split() else "Brand"
 
-    # Create coupon in database
-    coupon = await CouponService.create_coupon(
-        session=session,
-        admin_id=message.from_user.id,
-        title=name,
-        brand=brand,
-        category=CouponCategory.OTHER,
-        value="",
-        points_required=pts,
-        stock_type=StockType.UNIQUE_CODES,
-        stock=0,
-        code=None,
-        description=desc,
-        terms=desc,
-    )
-    await session.flush()
+    try:
+        # Create coupon in database
+        coupon = await CouponService.create_coupon(
+            session=session,
+            admin_id=user_id,
+            title=name,
+            brand=brand,
+            category=CouponCategory.OTHER,
+            value="",
+            points_required=pts,
+            stock_type=StockType.UNIQUE_CODES,
+            stock=0,
+            code=None,
+            description=desc,
+            terms=desc,
+        )
+        await session.flush()
+        logger.info(f"[ADD_COUPON] coupon_created={coupon.id}")
 
-    # Import unique codes into database
-    success, _, stats = await StockService.bulk_import_unique_codes(
-        session=session,
-        admin_id=message.from_user.id,
-        coupon_id=coupon.id,
-        raw_text=raw_text,
-    )
-    await session.commit()
+        # Import unique codes into database
+        success, report, stats = await StockService.bulk_import_unique_codes(
+            session=session,
+            admin_id=user_id,
+            coupon_id=coupon.id,
+            raw_text=raw_text,
+        )
+        logger.info(f"[ADD_COUPON] codes_inserted={stats.get('imported', 0)}")
 
-    response_text = (
-        "✅ <b>Coupon Added</b>\n\n"
-        f"🎟 <b>{escape(coupon.title)}</b>\n"
-        f"⭐ <b>{coupon.points_required} Points</b>\n"
-        f"📦 <b>{stats['imported']} codes added</b>"
-    )
-    await message.answer(
-        response_text,
-        reply_markup=get_admin_main_keyboard(),
-        parse_mode="HTML",
-    )
+        await session.commit()
+        logger.info("[ADD_COUPON] transaction_committed")
+
+        await state.clear()
+        logger.info("[ADD_COUPON] fsm_cleared")
+
+        response_text = (
+            "✅ <b>Coupon Added</b>\n\n"
+            f"🎟 <b>{escape(coupon.title)}</b>\n"
+            f"⭐ <b>{coupon.points_required} Points</b>\n"
+            f"📦 <b>{stats['imported']} codes added</b>"
+        )
+        await message.answer(
+            response_text,
+            reply_markup=get_admin_main_keyboard(),
+            parse_mode="HTML",
+        )
+        logger.info("[ADD_COUPON] success_response_sent")
+    except Exception as e:
+        logger.error(f"[ADD_COUPON] Error creating coupon with codes: {e}", exc_info=True)
+        await session.rollback()
+        await state.clear()
+        await message.answer(
+            f"❌ <b>Error creating coupon:</b> {escape(str(e))}",
+            reply_markup=get_admin_main_keyboard(),
+            parse_mode="HTML",
+        )
 
 
 # =========================================================================
