@@ -117,17 +117,39 @@ def get_insufficient_points_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+DIGIT_EMOJI_MAP = {
+    "0": "0️⃣",
+    "1": "1️⃣",
+    "2": "2️⃣",
+    "3": "3️⃣",
+    "4": "4️⃣",
+    "5": "5️⃣",
+    "6": "6️⃣",
+    "7": "7️⃣",
+    "8": "8️⃣",
+    "9": "9️⃣",
+}
+
+
+def to_number_emoji(num: int) -> str:
+    """Convert integer to number keycap emojis (e.g. 6 -> 6️⃣, 10 -> 🔟)."""
+    if num == 10:
+        return "🔟"
+    return "".join(DIGIT_EMOJI_MAP.get(d, d) for d in str(num))
+
+
 def get_available_coupons_keyboard(
     coupons: List[Coupon],
     page: int,
     total_pages: int,
 ) -> InlineKeyboardMarkup:
-    """Create dynamic list of available coupon buttons with green/red stock indicator and clean points."""
+    """Create dynamic list of available coupon buttons with green/red stock indicator and number emoji points."""
     buttons = []
 
     for coupon in coupons:
         indicator = "🟢" if coupon.stock > 0 else "🔴"
-        btn_text = f"{indicator} {coupon.title} ⭐ {coupon.points_required}"
+        pts_emoji = to_number_emoji(coupon.points_required)
+        btn_text = f"{indicator} {coupon.title} : {pts_emoji}"
         buttons.append([
             InlineKeyboardButton(
                 text=btn_text,

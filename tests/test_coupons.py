@@ -207,8 +207,8 @@ async def test_direct_available_coupons_query_and_keyboard(db_session: AsyncSess
     assert total_count >= 2
     kb = get_available_coupons_keyboard(coupons, page=1, total_pages=1)
     btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert any("🟢 BigBasket ₹60 OFF ⭐ 6" in t for t in btn_texts)
-    assert any("🟢 Myntra ₹100 OFF ⭐ 6" in t for t in btn_texts)
+    assert any("🟢 BigBasket ₹60 OFF : 6️⃣" in t for t in btn_texts)
+    assert any("🟢 Myntra ₹100 OFF : 6️⃣" in t for t in btn_texts)
 
 
 @pytest.mark.asyncio
@@ -399,8 +399,8 @@ async def test_out_of_stock_coupon_and_my_coupons_ui(db_session: AsyncSession):
     # Verify button formats in keyboard
     kb = get_available_coupons_keyboard(coupons, page=1, total_pages=1)
     btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert any("🟢 BigBasket ⭐ 3" in t for t in btn_texts)
-    assert any("🔴 Myntra ⭐ 5" in t for t in btn_texts)
+    assert any("🟢 BigBasket : 3️⃣" in t for t in btn_texts)
+    assert any("🔴 Myntra : 5️⃣" in t for t in btn_texts)
 
     # 2. Test clicking out of stock coupon
     user, _, _ = await UserService.get_or_create_user(db_session, 666777, first_name="Clicker")
