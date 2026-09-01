@@ -1,0 +1,42 @@
+services:
+  telegram_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coupon_reward_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+    environment:
+      - PYTHONUNBUFFERED=1
+      # To connect to postgres container below, set in .env:
+      # DATABASE_URL=postgresql+asyncpg://postgres:postgres_password@db:5432/coupon_bot
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  # Optional PostgreSQL database for high-concurrency production deployments
+  db:
+    image: postgres:16-alpine
+    container_name: coupon_bot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: coupon_bot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres-stack
+
+volumes:
+  postgres_data:

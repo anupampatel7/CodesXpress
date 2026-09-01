@@ -1,0 +1,41 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Database & SQLite files
+data/*.db
+data/*.db-*
+data/*.sqlite3
+data/*.sqlite
+*.db
+*.db-*
+*.sqlite3
+*.sqlite
+backups/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

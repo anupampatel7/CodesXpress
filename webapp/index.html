@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Codes Xpress 💎 | Device Verification</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: var(--tg-theme-bg-color, #0f172a);
+      color: var(--tg-theme-text-color, #f8fafc);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      background: var(--tg-theme-secondary-bg-color, #1e293b);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 32px 24px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    .icon {
+      font-size: 54px;
+      margin-bottom: 16px;
+      display: block;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+    p {
+      font-size: 14px;
+      color: var(--tg-theme-hint-color, #94a3b8);
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .btn {
+      width: 100%;
+      background: var(--tg-theme-button-color, #2563eb);
+      color: var(--tg-theme-button-text-color, #ffffff);
+      border: none;
+      border-radius: 12px;
+      padding: 14px 20px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .status-msg {
+      margin-top: 16px;
+      font-size: 13px;
+      font-weight: 500;
+      min-height: 20px;
+    }
+    .status-success { color: #10b981; }
+    .status-warning { color: #f59e0b; }
+    .status-error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="card" id="mainCard">
+    <span class="icon" id="cardIcon">🔒</span>
+    <h1 id="cardTitle">Verify</h1>
+    <p id="cardDesc">Verify your device to continue.</p>
+    <button class="btn" id="verifyBtn" onclick="runDeviceVerification()">🔒 Verify</button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <script>
+    // Initialize Telegram WebApp
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    // Collect non-sensitive privacy-preserving browser fingerprint
+    function generateBrowserFingerprint() {
+      const screenDetails = `${window.screen.width}x${window.screen.height}@${window.devicePixelRatio || 1}`;
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const language = navigator.language || navigator.userLanguage || "en";
+      const platform = navigator.platform || "unknown";
+      const hardwareConcurrency = String(navigator.hardwareConcurrency || 4);
+
+      // Lightweight 2D canvas entropy
+      let canvasHash = "";
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 120;
+        canvas.height = 30;
+        const ctx = canvas.getContext("2d");
+        ctx.textBaseline = "top";
+        ctx.font = "14px 'Arial'";
+        ctx.fillStyle = "#f60";
+        ctx.fillRect(10, 1, 62, 20);
+        ctx.fillStyle = "#069";
+        ctx.fillText("CodesXpress", 2, 8);
+        canvasHash = canvas.toDataURL().slice(-32);
+      } catch (e) {
+        canvasHash = "canvas_unavailable";
+      }
+
+      // WebGL renderer info if accessible
+      let webglInfo = "";
+      try {
+        const glCanvas = document.createElement("canvas");
+        const gl = glCanvas.getContext("webgl") || glCanvas.getContext("experimental-webgl");
+        if (gl) {
+          const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+          if (debugInfo) {
+            webglInfo = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || "";
+          }
+        }
+      } catch (e) {
+        webglInfo = "gl_unavailable";
+      }
+
+      return {
+        screen: screenDetails,
+        timezone: timeZone,
+        language: language,
+        platform: platform,
+        hardware_concurrency: hardwareConcurrency,
+        canvas: canvasHash,
+        webgl: webglInfo,
+      };
+    }
+
+    async function runDeviceVerification() {
+      const btn = document.getElementById("verifyBtn");
+      const icon = document.getElementById("cardIcon");
+      const title = document.getElementById("cardTitle");
+      const desc = document.getElementById("cardDesc");
+      const status = document.getElementById("statusMsg");
+
+      btn.disabled = true;
+      btn.innerText = "Verifying...";
+      status.className = "status-msg";
+      status.innerText = "Securing device identity...";
+
+      const initData = tg?.initData || "";
+      const fingerprint = generateBrowserFingerprint();
+
+      try {
+        const response = await fetch("/api/verify-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            init_data: initData,
+            fingerprint: fingerprint,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          icon.innerText = "✅";
+          title.innerText = "Verified";
+          desc.innerText = "Your device has been verified successfully.";
+          btn.style.display = "none";
+          status.className = "status-msg status-success";
+          status.innerText = "Returning to Telegram...";
+
+          setTimeout(() => {
+            if (tg) {
+              tg.sendData(JSON.stringify({ verified: true, code: result.code }));
+              tg.close();
+            }
+          }, 1200);
+        } else if (result.code === "DEVICE_ALREADY_BOUND") {
+          icon.innerText = "⚠️";
+          title.innerText = "Verification unavailable";
+          desc.innerText = "This device has already been used.";
+          btn.style.display = "none";
+          status.className = "status-msg status-warning";
+          status.innerText = "Device already bound to another account.";
+        } else {
+          icon.innerText = "❌";
+          title.innerText = "Verification failed";
+          desc.innerText = "Try again.";
+          btn.disabled = false;
+          btn.innerText = "Try again";
+          status.className = "status-msg status-error";
+          status.innerText = result.message || "Verification rejected.";
+        }
+      } catch (err) {
+        icon.innerText = "❌";
+        title.innerText = "Verification failed";
+        desc.innerText = "Try again.";
+        btn.disabled = false;
+        btn.innerText = "Try again";
+        status.className = "status-msg status-error";
+        status.innerText = "Network request failed.";
+      }
+    }
+  </script>
+</body>
+</html>
