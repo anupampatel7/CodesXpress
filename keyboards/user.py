@@ -127,7 +127,8 @@ def get_available_coupons_keyboard(
 
     for coupon in coupons:
         indicator = "🟢" if coupon.stock > 0 else "🔴"
-        btn_text = f"{indicator} {coupon.title} — {coupon.points_required}⭐"
+        pt_label = "Point" if coupon.points_required == 1 else "Points"
+        btn_text = f"{indicator} {coupon.title} : {coupon.points_required} {pt_label}"
         buttons.append([
             InlineKeyboardButton(
                 text=btn_text,
