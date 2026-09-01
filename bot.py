@@ -127,16 +127,17 @@ async def main() -> None:
     root_router = setup_routers()
     dp.include_router(root_router)
 
-    # Start WebApp HTTP Server
+    # Start Health & WebApp HTTP Server on dynamic $PORT
     from aiohttp import web
     from services.webapp_server import create_webapp_application
 
+    server_port = settings.server_port
     webapp_app = create_webapp_application()
     runner = web.AppRunner(webapp_app)
     await runner.setup()
-    site = web.TCPSite(runner, host=settings.WEBAPP_HOST, port=settings.WEBAPP_PORT)
+    site = web.TCPSite(runner, host=settings.WEBAPP_HOST, port=server_port)
     await site.start()
-    logger.info(f"WebApp server running at http://{settings.WEBAPP_HOST}:{settings.WEBAPP_PORT}/verify")
+    logger.info(f"Health & WebApp HTTP server running on http://{settings.WEBAPP_HOST}:{server_port} (/health ready)")
     if settings.WEBAPP_URL:
         logger.info(f"Public WebApp URL configured: {settings.WEBAPP_URL}")
     else:
@@ -148,14 +149,39 @@ async def main() -> None:
     except Exception as e:
         logger.warning(f"Could not delete webhook: {e}")
 
-    logger.info("Bot is now polling for updates...")
+    logger.info("Bot is starting Telegram updates polling...")
+
+    async def run_polling():
+        """Run aiogram long polling with auto-recovery for network dropouts."""
+        retry_delay = 2
+        while True:
+            try:
+                await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+                break
+            except asyncio.CancelledError:
+                logger.info("Telegram polling task received cancellation request.")
+                break
+            except Exception as e:
+                logger.error(f"Telegram polling error: {e}. Reconnecting in {retry_delay}s...", exc_info=True)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 30)
+
+    polling_task = asyncio.create_task(run_polling())
 
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await polling_task
+    except asyncio.CancelledError:
+        pass
     finally:
+        if not polling_task.done():
+            polling_task.cancel()
+            try:
+                await polling_task
+            except (asyncio.CancelledError, Exception):
+                pass
         await runner.cleanup()
         await bot.session.close()
-        logger.info("Bot session closed. Goodbye!")
+        logger.info("Server and Bot session closed gracefully. Goodbye!")
 
 
 if __name__ == "__main__":

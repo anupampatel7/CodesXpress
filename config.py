@@ -118,18 +118,22 @@ class Settings(BaseSettings):
         description="Comma-separated channel usernames or chat IDs",
     )
 
-    # Telegram WebApp Device Verification
+    # Telegram WebApp & Health HTTP Server
     WEBAPP_URL: str = Field(
         default="",
         description="Public HTTPS URL of the hosted WebApp (e.g. https://domain.com/verify)",
     )
     WEBAPP_HOST: str = Field(
         default="0.0.0.0",
-        description="Local host address for the aiohttp WebApp server",
+        description="Host address for the aiohttp WebApp and health server",
+    )
+    PORT: Optional[int] = Field(
+        default=None,
+        description="Port provided dynamically by cloud host (Render $PORT)",
     )
     WEBAPP_PORT: int = Field(
         default=8080,
-        description="Local port for the aiohttp WebApp server",
+        description="Local fallback port for the aiohttp WebApp and health server",
     )
 
     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -182,6 +186,35 @@ class Settings(BaseSettings):
         if v < 1:
             raise ValueError("POINTS_PER_REFERRAL must be at least 1")
         return v
+
+    @field_validator("PORT", mode="before")
+    @classmethod
+    def parse_port(cls, v: Any) -> Optional[int]:
+        if v is None or v == "":
+            env_port = os.getenv("PORT")
+            if env_port:
+                try:
+                    return int(env_port)
+                except ValueError:
+                    pass
+            return None
+        try:
+            return int(str(v).strip())
+        except ValueError:
+            return None
+
+    @property
+    def server_port(self) -> int:
+        """Return dynamic cloud host PORT (Render) if provided, otherwise fallback to WEBAPP_PORT."""
+        if self.PORT is not None:
+            return self.PORT
+        env_port = os.getenv("PORT")
+        if env_port:
+            try:
+                return int(env_port)
+            except ValueError:
+                pass
+        return self.WEBAPP_PORT
 
     @property
     def admin_ids(self) -> List[int]:

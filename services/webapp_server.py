@@ -73,8 +73,8 @@ async def handle_post_verify_device(request: web.Request) -> web.Response:
 
 
 async def handle_health(request: web.Request) -> web.Response:
-    """Healthcheck endpoint."""
-    return web.json_response({"status": "ok", "app": "Codes Xpress WebApp"})
+    """Healthcheck endpoint for Render and UptimeRobot."""
+    return web.json_response({"status": "ok"})
 
 
 def create_webapp_application() -> web.Application:

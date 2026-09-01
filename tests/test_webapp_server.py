@@ -132,3 +132,22 @@ async def test_webapp_post_verify_genuine_device_binding(db_session: AsyncSessio
         assert data_b["code"] == "DEVICE_ALREADY_BOUND"
     finally:
         await client.close()
+
+
+def test_health_and_dynamic_port_configuration(monkeypatch):
+    """Verify that settings correctly parses Render's dynamic PORT environment variable."""
+    from config import Settings
+
+    # Case 1: Default when PORT is not set
+    s_default = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1)
+    assert s_default.server_port == 8080
+
+    # Case 2: Render supplies PORT=10000
+    monkeypatch.setenv("PORT", "10000")
+    s_render = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1)
+    assert s_render.server_port == 10000
+
+    # Case 3: Explicit PORT parameter passed
+    s_custom = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1, PORT=9090)
+    assert s_custom.server_port == 9090
+

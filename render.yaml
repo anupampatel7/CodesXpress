@@ -1,10 +1,12 @@
 services:
-  - type: worker
+  - type: web
     name: codes-xpress-bot
     runtime: python
     region: oregon
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: BOT_TOKEN
