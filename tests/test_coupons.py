@@ -207,8 +207,8 @@ async def test_direct_available_coupons_query_and_keyboard(db_session: AsyncSess
     assert total_count >= 2
     kb = get_available_coupons_keyboard(coupons, page=1, total_pages=1)
     btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert any("BigBasket ₹60 OFF" in t and "6 ⭐" in t for t in btn_texts)
-    assert any("Myntra ₹100 OFF" in t and "6 ⭐" in t for t in btn_texts)
+    assert any("🟢 BigBasket ₹60 OFF — 6⭐" in t for t in btn_texts)
+    assert any("🟢 Myntra ₹100 OFF — 6⭐" in t for t in btn_texts)
 
 
 @pytest.mark.asyncio
@@ -359,5 +359,97 @@ async def test_exact_coupon_code_inputs_and_persistence(db_session: AsyncSession
     # Verify remaining stock is 4
     rem_stock = await StockService.get_authoritative_stock(db_session, c2)
     assert rem_stock == 4
+
+
+@pytest.mark.asyncio
+async def test_out_of_stock_coupon_and_my_coupons_ui(db_session: AsyncSession):
+    """Verify out-of-stock coupon button format 🔴, detail message, and direct My Coupons rendering."""
+    from aiogram.types import Message
+    from keyboards.user import get_available_coupons_keyboard
+    from handlers.coupons import handle_coupon_detail, CouponDetailCallback
+    from handlers.profile import handle_my_coupons
+    from services.user_service import UserService
+    from unittest.mock import AsyncMock, MagicMock
+
+    # 1. Create 1 in-stock and 1 out-of-stock coupon
+    c_in = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="BigBasket",
+        brand="BigBasket",
+        points_required=3,
+        stock_type=StockType.QUANTITY,
+        stock=5,
+    )
+    c_out = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Myntra",
+        brand="Myntra",
+        points_required=5,
+        stock_type=StockType.QUANTITY,
+        stock=0,
+    )
+    await db_session.commit()
+
+    # Verify both are returned by get_available_coupons
+    coupons, total, _ = await CouponService.get_available_coupons(db_session)
+    assert total >= 2
+
+    # Verify button formats in keyboard
+    kb = get_available_coupons_keyboard(coupons, page=1, total_pages=1)
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any("🟢 BigBasket — 3⭐" in t for t in btn_texts)
+    assert any("🔴 Myntra — 5⭐" in t for t in btn_texts)
+
+    # 2. Test clicking out of stock coupon
+    user, _, _ = await UserService.get_or_create_user(db_session, 666777, first_name="Clicker")
+    user.points = 100
+    await db_session.commit()
+
+    cb_out = MagicMock()
+    cb_out.from_user = MagicMock(id=666777, username="clicker", first_name="Clicker", last_name=None)
+    cb_out.message = MagicMock()
+    cb_out.message.edit_text = AsyncMock()
+    cb_out.answer = AsyncMock()
+
+    await handle_coupon_detail(
+        callback=cb_out,
+        callback_data=CouponDetailCallback(coupon_id=c_out.id, brand="Myntra", page=1),
+        session=db_session,
+    )
+
+    cb_out.message.edit_text.assert_called_once()
+    shown_text = cb_out.message.edit_text.call_args[0][0]
+    assert "🔴 <b>Out of Stock</b>" in shown_text
+    assert "This coupon is currently unavailable." in shown_text
+
+    # 3. Test My Coupons empty state
+    msg_empty = MagicMock(spec=Message)
+    msg_empty.from_user = MagicMock(id=666777, username="clicker", first_name="Clicker", last_name=None)
+    msg_empty.text = "/mycoupons"
+    msg_empty.answer = AsyncMock()
+
+    await handle_my_coupons(msg_empty, db_session)
+    msg_empty.answer.assert_called_once()
+    assert "🎟️ No redeemed coupons yet." in msg_empty.answer.call_args[0][0]
+
+    # 4. User redeems in-stock coupon and tests My Coupons populated state
+    s_red, _, red = await CouponService.redeem_coupon(db_session, user.id, c_in.id)
+    await db_session.commit()
+    assert s_red is True
+
+    msg_pop = MagicMock(spec=Message)
+    msg_pop.from_user = MagicMock(id=666777, username="clicker", first_name="Clicker", last_name=None)
+    msg_pop.text = "/mycoupons"
+    msg_pop.answer = AsyncMock()
+
+    await handle_my_coupons(msg_pop, db_session)
+    msg_pop.answer.assert_called_once()
+    pop_text = msg_pop.answer.call_args[0][0]
+    assert "🎟️ <b>My Coupons</b>" in pop_text
+    assert "BigBasket" in pop_text
+    assert red.coupon_code in pop_text
+
 
 

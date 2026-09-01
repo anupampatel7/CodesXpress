@@ -122,12 +122,12 @@ def get_available_coupons_keyboard(
     page: int,
     total_pages: int,
 ) -> InlineKeyboardMarkup:
-    """Create dynamic list of available coupon buttons with icons and pagination."""
+    """Create dynamic list of available coupon buttons with green/red stock indicator and clean points."""
     buttons = []
 
     for coupon in coupons:
-        title_name = coupon.title
-        btn_text = f"🎁 {title_name} · {coupon.points_required} ⭐"
+        indicator = "🟢" if coupon.stock > 0 else "🔴"
+        btn_text = f"{indicator} {coupon.title} — {coupon.points_required}⭐"
         buttons.append([
             InlineKeyboardButton(
                 text=btn_text,

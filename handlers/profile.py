@@ -72,7 +72,7 @@ async def handle_my_coupons(
     event: Message | CallbackQuery,
     session: AsyncSession,
 ) -> None:
-    """Display list of coupons redeemed by the user."""
+    """Display list of coupons redeemed by the user directly."""
     from_user = event.from_user
     if not from_user:
         return
@@ -98,12 +98,21 @@ async def handle_my_coupons(
     res = await session.execute(stmt)
     redemptions = list(res.scalars().all())
 
+    kb = get_back_to_menu_keyboard()
+
     if not redemptions:
-        text = "🎟️ <b>No Redeemed Coupons</b>\n\nYour redeemed coupons will appear here."
-        kb = get_back_to_menu_keyboard()
+        text = "🎟️ No redeemed coupons yet."
     else:
-        text = "🎟️ <b>My Coupons</b>\n\nTap a coupon below to view details and code:"
-        kb = get_my_coupons_keyboard(redemptions)
+        text_lines = ["🎟️ <b>My Coupons</b>\n"]
+        for r in redemptions:
+            title = r.coupon.title if r.coupon else "Coupon"
+            date_str = r.created_at.strftime("%d %b %Y, %I:%M %p")
+            text_lines.append(
+                f"• <b>{escape(title)}</b>\n"
+                f"🎫 Code: <code>{escape(r.coupon_code)}</code>\n"
+                f"📅 {date_str}\n"
+            )
+        text = "\n".join(text_lines)
 
     if isinstance(event, CallbackQuery):
         await event.answer()

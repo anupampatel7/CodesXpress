@@ -116,11 +116,19 @@ async def handle_coupon_detail(
         return
 
     available_stock = await StockService.get_authoritative_stock(session, coupon)
-    can_redeem = (
-        coupon.is_active
-        and not coupon.is_expired
-        and available_stock > 0
-    )
+    if available_stock <= 0 or coupon.is_expired:
+        msg_text = (
+            "🔴 <b>Out of Stock</b>\n\n"
+            "This coupon is currently unavailable."
+        )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Back", callback_data="menu_coupons")]
+            ]
+        )
+        await callback.answer()
+        await safe_edit_message(callback, msg_text, reply_markup=kb)
+        return
 
     msg_text = format_coupon_detail(
         coupon=coupon,
@@ -132,7 +140,7 @@ async def handle_coupon_detail(
         coupon_id=coupon.id,
         brand=brand_name,
         page=callback_data.page,
-        can_redeem=can_redeem,
+        can_redeem=True,
     )
 
     await callback.answer()

@@ -26,12 +26,11 @@ class CouponService:
         page: int = 1,
         per_page: int = 8,
     ) -> Tuple[List[Coupon], int, int]:
-        """Fetch active, non-expired, in-stock coupons with pagination."""
+        """Fetch all active, non-expired coupons (including out-of-stock) with pagination."""
         now = utc_now()
         filters = [
             Coupon.is_active == True,
             or_(Coupon.expiry_date == None, Coupon.expiry_date > now),
-            Coupon.stock > 0,
         ]
 
         count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
