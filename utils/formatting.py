@@ -137,6 +137,43 @@ def get_brand_icon(brand_name: str) -> str:
     return BRAND_ICON_MAP.get(clean.lower(), "🎁")
 
 
+DIGIT_EMOJI_MAP = {
+    "0": "0️⃣",
+    "1": "1️⃣",
+    "2": "2️⃣",
+    "3": "3️⃣",
+    "4": "4️⃣",
+    "5": "5️⃣",
+    "6": "6️⃣",
+    "7": "7️⃣",
+    "8": "8️⃣",
+    "9": "9️⃣",
+}
+
+
+def to_number_emoji(num: int) -> str:
+    """Convert integer to number keycap emojis (e.g. 6 -> 6️⃣, 10 -> 🔟)."""
+    if num == 10:
+        return "🔟"
+    return "".join(DIGIT_EMOJI_MAP.get(d, d) for d in str(num))
+
+
+def format_coupon_stock_overview(coupon_stocks: List[Any]) -> str:
+    """Format public coupon inventory stock overview."""
+    if not coupon_stocks:
+        return "📦 <b>Coupon Stock</b>\n\nNo active coupons currently available."
+
+    lines = ["📦 <b>Coupon Stock</b>\n"]
+    for coupon, stock in coupon_stocks:
+        indicator = "🟢" if stock > 0 else "🔴"
+        pts_emoji = to_number_emoji(coupon.points_required)
+        stock_label = f"{stock} available" if stock > 0 else "Out of Stock"
+        title = escape(coupon.title)
+        lines.append(f"{indicator} {title} : {pts_emoji} — {stock_label}")
+
+    return "\n".join(lines)
+
+
 def format_coupon_detail(coupon: Coupon, available_stock: int = 0, user_points: int = 0) -> str:
     """Format clean, short, and premium coupon details."""
     title = escape(coupon.title)

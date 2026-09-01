@@ -24,12 +24,14 @@ from keyboards.user import (
     get_redeem_confirm_keyboard,
     get_insufficient_points_keyboard,
     get_back_to_menu_keyboard,
+    get_check_stock_keyboard,
 )
 from utils.formatting import (
     format_coupon_detail,
     format_redeem_confirm_prompt,
     format_redemption_success,
     format_insufficient_points,
+    format_coupon_stock_overview,
     safe_edit_message,
 )
 
@@ -86,6 +88,26 @@ async def handle_brand_pagination(
 
     await callback.answer()
     await safe_edit_message(callback, text, reply_markup=kb)
+
+
+# =========================================================================
+# 1.5. PUBLIC COUPON STOCK OVERVIEW
+# =========================================================================
+
+@router.message(Command("stock"))
+@router.callback_query(F.data == "menu_check_stock")
+async def handle_check_stock(
+    event: Message | CallbackQuery,
+    session: AsyncSession,
+) -> None:
+    """Display real-time public coupon stock inventory."""
+    coupon_stocks = await StockService.get_all_active_coupons_stock(session)
+    text = format_coupon_stock_overview(coupon_stocks)
+    kb = get_check_stock_keyboard()
+
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    await safe_edit_message(event, text, reply_markup=kb)
 
 
 # =========================================================================

@@ -452,4 +452,99 @@ async def test_out_of_stock_coupon_and_my_coupons_ui(db_session: AsyncSession):
     assert red.coupon_code in pop_text
 
 
+@pytest.mark.asyncio
+async def test_public_check_stock_flow(db_session: AsyncSession):
+    """Verify public stock check overview, dynamic inventory accuracy, and main menu button presence."""
+    from unittest.mock import MagicMock, AsyncMock
+    from aiogram.types import Message
+    from keyboards.user import get_main_menu_keyboard
+    from handlers.coupons import handle_check_stock
+    from services.stock_service import StockService
+    from services.user_service import UserService
+    from utils.formatting import format_coupon_stock_overview
+
+    # 1. Verify Main Menu has 📦 Check Stock for both normal users and admins
+    user_kb = get_main_menu_keyboard(is_admin=False)
+    user_btn_texts = [btn.text for row in user_kb.inline_keyboard for btn in row]
+    user_callbacks = [btn.callback_data for row in user_kb.inline_keyboard for btn in row]
+    assert "📦 Check Stock" in user_btn_texts
+    assert "menu_check_stock" in user_callbacks
+
+    admin_kb = get_main_menu_keyboard(is_admin=True)
+    admin_btn_texts = [btn.text for row in admin_kb.inline_keyboard for btn in row]
+    assert "📦 Check Stock" in admin_btn_texts
+
+    # 2. Setup coupons: 1 active with unique codes, 1 active with 0 stock, 1 inactive/disabled
+    c_active = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Active Store",
+        brand="ActiveStore",
+        points_required=4,
+        stock_type=StockType.UNIQUE_CODES,
+    )
+    await db_session.flush()
+    await StockService.bulk_import_unique_codes(db_session, 999, c_active.id, "ACT01\nACT02\nACT03")
+
+    c_empty = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Empty Store",
+        brand="EmptyStore",
+        points_required=2,
+        stock_type=StockType.QUANTITY,
+        stock=0,
+    )
+
+    c_disabled = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Disabled Store",
+        brand="DisabledStore",
+        points_required=5,
+        stock_type=StockType.QUANTITY,
+        stock=50,
+    )
+    c_disabled.is_active = False
+    await db_session.commit()
+
+    # 3. Query stock overview
+    stocks = await StockService.get_all_active_coupons_stock(db_session)
+    overview_text = format_coupon_stock_overview(stocks)
+
+    # Check displayed format
+    assert "📦 <b>Coupon Stock</b>" in overview_text
+    assert "🟢 Active Store : 4️⃣ — 3 available" in overview_text
+    assert "🔴 Empty Store : 2️⃣ — Out of Stock" in overview_text
+    # Inactive coupon must NOT appear
+    assert "Disabled Store" not in overview_text
+
+    # 4. Test handle_check_stock handler
+    mock_msg = MagicMock(spec=Message)
+    mock_msg.text = "/stock"
+    mock_msg.answer = AsyncMock()
+
+    await handle_check_stock(mock_msg, db_session)
+    mock_msg.answer.assert_called_once()
+    msg_out = mock_msg.answer.call_args[0][0]
+    assert "📦 <b>Coupon Stock</b>" in msg_out
+    assert "🟢 Active Store : 4️⃣ — 3 available" in msg_out
+    assert "🔴 Empty Store : 2️⃣ — Out of Stock" in msg_out
+
+    # 5. User redeems 1 code -> Verify stock decreases to 2 immediately
+    buyer, _, _ = await UserService.get_or_create_user(db_session, 888111, first_name="Buyer")
+    buyer.points = 10
+    await db_session.commit()
+
+    s_red, _, _ = await CouponService.redeem_coupon(db_session, buyer.id, c_active.id)
+    await db_session.commit()
+    assert s_red is True
+
+    # Check stock again
+    stocks_after = await StockService.get_all_active_coupons_stock(db_session)
+    overview_after = format_coupon_stock_overview(stocks_after)
+    assert "🟢 Active Store : 4️⃣ — 2 available" in overview_after
+
+
+
 

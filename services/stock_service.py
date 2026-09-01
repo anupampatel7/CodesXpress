@@ -3,7 +3,7 @@
 import logging
 from typing import Tuple, Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func, and_
+from sqlalchemy import select, update, delete, func, and_, or_
 from models.coupon import Coupon, StockType
 from models.coupon_code import CouponCode, CodeStatus
 from models.admin_action import AdminAction
@@ -223,3 +223,25 @@ class StockService:
         await session.flush()
 
         return True, f"Removed {removed_count} unused code(s). Used codes remain intact.", removed_count
+
+    @staticmethod
+    async def get_all_active_coupons_stock(session: AsyncSession) -> List[Tuple[Coupon, int]]:
+        """Fetch all active, non-expired coupons with their authoritative available stock."""
+        from models.base import utc_now
+        now = utc_now()
+        stmt = (
+            select(Coupon)
+            .where(
+                Coupon.is_active == True,
+                or_(Coupon.expiry_date == None, Coupon.expiry_date > now),
+            )
+            .order_by(Coupon.points_required.asc(), Coupon.id.asc())
+        )
+        res = await session.execute(stmt)
+        coupons = list(res.scalars().all())
+
+        results = []
+        for c in coupons:
+            authoritative_stock = await StockService.get_authoritative_stock(session, c)
+            results.append((c, authoritative_stock))
+        return results
