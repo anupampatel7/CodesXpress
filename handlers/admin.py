@@ -740,13 +740,11 @@ async def handle_add_coupon_codes(
     )
     await session.commit()
 
-    stock_count = stats.get("total_available", len(parsed_codes))
-
     response_text = (
         "✅ <b>Coupon Added</b>\n\n"
-        f"🎟 <b>Name:</b> {escape(coupon.title)}\n"
-        f"⭐ <b>Redeem:</b> {coupon.points_required} Points\n"
-        f"📦 <b>Stock:</b> {stock_count}"
+        f"🎟 <b>{escape(coupon.title)}</b>\n"
+        f"⭐ <b>{coupon.points_required} Points</b>\n"
+        f"📦 <b>{stats['imported']} codes added</b>"
     )
     await message.answer(
         response_text,

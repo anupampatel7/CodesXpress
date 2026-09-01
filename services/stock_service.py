@@ -100,6 +100,8 @@ class StockService:
         if not parsed_codes:
             return False, "No valid coupon codes found in input.", {"imported": 0, "duplicates": 0, "invalid": 0}
 
+        in_batch_duplicates = total_raw - len(parsed_codes)
+
         # Check existing codes for this coupon in database
         existing_stmt = select(CouponCode.code).where(
             CouponCode.coupon_id == coupon_id,
@@ -108,11 +110,11 @@ class StockService:
         existing_codes = set((await session.execute(existing_stmt)).scalars().all())
 
         new_codes_to_insert = []
-        duplicate_count = 0
+        db_duplicate_count = 0
 
         for code in parsed_codes:
             if code in existing_codes:
-                duplicate_count += 1
+                db_duplicate_count += 1
             else:
                 new_codes_to_insert.append(CouponCode(
                     coupon_id=coupon_id,
@@ -129,7 +131,7 @@ class StockService:
 
         stats = {
             "imported": len(new_codes_to_insert),
-            "duplicates": duplicate_count,
+            "duplicates": in_batch_duplicates + db_duplicate_count,
             "total_available": new_total_stock,
         }
 

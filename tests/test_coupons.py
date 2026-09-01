@@ -256,3 +256,108 @@ async def test_simplified_add_coupon_flow(db_session: AsyncSession):
     assert "⭐ <b>Redeem:</b> 6 Points" in detail_text
 
 
+@pytest.mark.asyncio
+async def test_exact_coupon_code_inputs_and_persistence(db_session: AsyncSession):
+    """Test single code, 4 codes, blank lines, duplicate codes, and subsequent redemption."""
+    from sqlalchemy import select
+    from models.coupon_code import CouponCode, CodeStatus
+    from models.user import User
+    from services.user_service import UserService
+    from services.stock_service import StockService
+
+    # 1. Single code test
+    c1 = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Single Code Coupon",
+        brand="SingleBrand",
+        points_required=5,
+        stock_type=StockType.UNIQUE_CODES,
+        description="Single code test description",
+    )
+    await db_session.flush()
+    s1, _, stats1 = await StockService.bulk_import_unique_codes(
+        session=db_session,
+        admin_id=999,
+        coupon_id=c1.id,
+        raw_text="CODE001",
+    )
+    await db_session.commit()
+    assert s1 is True
+    assert stats1["imported"] == 1
+    assert stats1["total_available"] == 1
+
+    # Verify directly from DB table
+    db_codes_1 = (await db_session.execute(select(CouponCode.code).where(CouponCode.coupon_id == c1.id))).scalars().all()
+    assert list(db_codes_1) == ["CODE001"]
+
+    # 2. 4 codes with extra blank lines and duplicates
+    c2 = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Multi Code Coupon",
+        brand="MultiBrand",
+        points_required=3,
+        stock_type=StockType.UNIQUE_CODES,
+        description="4 codes test description",
+    )
+    await db_session.flush()
+    # Input with blank lines and duplicate CODE002
+    raw_input = "\n\nCODE002\n\nCODE003\n   \nCODE004\nCODE002\n"
+    s2, _, stats2 = await StockService.bulk_import_unique_codes(
+        session=db_session,
+        admin_id=999,
+        coupon_id=c2.id,
+        raw_text=raw_input,
+    )
+    await db_session.commit()
+    assert s2 is True
+    assert stats2["imported"] == 3  # CODE002, CODE003, CODE004 (duplicate CODE002 skipped)
+    assert stats2["duplicates"] == 1
+    assert stats2["total_available"] == 3
+
+    # Restock with ABC123 and XYZ456
+    s2_restock, _, stats2_restock = await StockService.bulk_import_unique_codes(
+        session=db_session,
+        admin_id=999,
+        coupon_id=c2.id,
+        raw_text="ABC123\nXYZ456",
+    )
+    await db_session.commit()
+    assert s2_restock is True
+    assert stats2_restock["imported"] == 2
+    assert stats2_restock["total_available"] == 5
+
+    # Verify all 5 codes exist in DB
+    db_codes_2 = (await db_session.execute(select(CouponCode.code).where(CouponCode.coupon_id == c2.id))).scalars().all()
+    assert set(db_codes_2) == {"CODE002", "CODE003", "CODE004", "ABC123", "XYZ456"}
+
+    # 3. Test subsequent redemption consuming one code at a time
+    user, _, _ = await UserService.get_or_create_user(session=db_session, telegram_id=777888, first_name="TestBuyer")
+    user.points = 20
+    await db_session.commit()
+
+    redeem_success, _, redemption = await CouponService.redeem_coupon(
+        session=db_session,
+        user_id=user.id,
+        coupon_id=c2.id,
+    )
+    await db_session.commit()
+    assert redeem_success is True
+    assert redemption is not None
+    assert redemption.coupon_code in {"CODE002", "CODE003", "CODE004", "ABC123", "XYZ456"}
+
+    # Verify that code is now USED in database
+    used_code_obj = (
+        await db_session.execute(
+            select(CouponCode).where(CouponCode.coupon_id == c2.id, CouponCode.code == redemption.coupon_code)
+        )
+    ).scalar_one()
+    assert used_code_obj.status == CodeStatus.USED
+    assert used_code_obj.assigned_to_user_id == user.id
+
+    # Verify remaining stock is 4
+    rem_stock = await StockService.get_authoritative_stock(db_session, c2)
+    assert rem_stock == 4
+
+

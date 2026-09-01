@@ -60,12 +60,18 @@ def sanitize_coupon_code(code: str) -> str:
 def parse_bulk_codes(raw_text: str) -> Tuple[list[str], int]:
     """Parse multiple coupon codes from newline-separated text.
 
+    - Splits only by newline.
+    - Trims leading/trailing whitespace per line.
+    - Ignores empty lines.
+    - Preserves exact code text.
+    - Deduplicates safely.
+
     Returns:
         Tuple of (valid_unique_codes_list, total_raw_count)
     """
     lines = raw_text.splitlines()
-    unique_codes = []
-    seen = set()
+    unique_codes: list[str] = []
+    seen: set[str] = set()
     total_raw = 0
 
     for line in lines:
@@ -73,9 +79,9 @@ def parse_bulk_codes(raw_text: str) -> Tuple[list[str], int]:
         if not cleaned:
             continue
         total_raw += 1
-        code_upper = cleaned.upper()
-        if code_upper not in seen:
-            seen.add(code_upper)
-            unique_codes.append(code_upper)
+        key = cleaned.upper()
+        if key not in seen:
+            seen.add(key)
+            unique_codes.append(cleaned)
 
     return unique_codes, total_raw
