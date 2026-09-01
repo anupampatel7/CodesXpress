@@ -39,7 +39,20 @@ def format_channel_prompt(channels: List) -> str:
 
 
 def format_channel_missing(missing_channels: List) -> str:
-    """Format missing channels friendly prompt."""
+    """Format missing channels friendly prompt showing which channel(s) are still missing."""
+    if missing_channels:
+        missing_names = []
+        for ch in missing_channels:
+            name = getattr(ch, "title", None) or getattr(ch, "username", None) or getattr(ch, "channel_id", "")
+            if isinstance(name, str) and not name.startswith("@") and not getattr(ch, "title", None):
+                name = f"@{name}"
+            missing_names.append(f"• <b>{escape(str(name))}</b>")
+        joined_list = "\n".join(missing_names)
+        return (
+            "⚠️ <b>Almost there!</b>\n\n"
+            f"You still need to join:\n{joined_list}\n\n"
+            "Please join the channel(s) above and click <b>Verify Membership</b>."
+        )
     return (
         "⚠️ <b>Almost there!</b>\n\n"
         "Please join all required channels and try again."

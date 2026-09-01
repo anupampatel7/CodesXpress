@@ -111,6 +111,10 @@ class Settings(BaseSettings):
         default="@Grabmint",
         description="Third required Telegram channel for referral verification",
     )
+    CHANNEL_4: Optional[str] = Field(
+        default="@offerelite",
+        description="Fourth required Telegram channel for referral verification",
+    )
 
     # Default initial required channels (Comma separated fallback)
     DEFAULT_REQUIRED_CHANNELS: str = Field(
@@ -234,9 +238,9 @@ class Settings(BaseSettings):
 
     @property
     def default_channel_list(self) -> List[str]:
-        """Collect all default required channels from CHANNEL_1, CHANNEL_2, CHANNEL_3, and DEFAULT_REQUIRED_CHANNELS."""
+        """Collect all default required channels from CHANNEL_1, CHANNEL_2, CHANNEL_3, CHANNEL_4, and DEFAULT_REQUIRED_CHANNELS."""
         channels: List[str] = []
-        for ch in (self.CHANNEL_1, self.CHANNEL_2, self.CHANNEL_3):
+        for ch in (self.CHANNEL_1, self.CHANNEL_2, self.CHANNEL_3, self.CHANNEL_4):
             if ch and ch.strip():
                 clean = ch.strip()
                 if clean not in channels:

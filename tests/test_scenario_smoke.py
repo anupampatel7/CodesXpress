@@ -41,8 +41,8 @@ async def test_full_scenario_smoke_lifecycle(db_session: AsyncSession, mock_bot)
     18. Admin can restock the coupon.
     19. Stock updates correctly.
     """
-    # 0. Setup required channels in DB (@OfferRaider, @OfferMate, @Grabmint)
-    for ch_name in ["@OfferRaider", "@OfferMate", "@Grabmint"]:
+    # 0. Setup required channels in DB (@OfferRaider, @OfferMate, @Grabmint, @offerelite)
+    for ch_name in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
         await ChannelService.add_channel(
             session=db_session,
             admin_id=999,
@@ -90,11 +90,11 @@ async def test_full_scenario_smoke_lifecycle(db_session: AsyncSession, mock_bot)
     )
     await db_session.commit()
 
-    # Step 5: B is shown all 3 required channels
+    # Step 5: B is shown all 4 required channels
     req_channels = await ChannelService.get_required_channels(db_session)
-    assert len(req_channels) == 3
+    assert len(req_channels) == 4
 
-    # Step 6 & 7: B joins all 3 and verification succeeds
+    # Step 6 & 7: B joins all 4 and verification succeeds
     class MemberJoined:
         status = ChatMemberStatus.MEMBER
 

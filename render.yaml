@@ -25,6 +25,8 @@ services:
         value: "@OfferMate"
       - key: CHANNEL_3
         value: "@Grabmint"
+      - key: CHANNEL_4
+        value: "@offerelite"
       - key: WEBAPP_URL
         sync: false
       - key: WEBAPP_HOST
