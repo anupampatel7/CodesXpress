@@ -58,18 +58,7 @@ async def handle_start_command(
         )
         return
 
-    # Check device verification for referred users
-    if user.referred_by or pending_referral:
-        is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
-        if not is_device_ok:
-            await message.answer(
-                format_device_verification_prompt(),
-                reply_markup=get_device_verification_keyboard(),
-                parse_mode="HTML",
-            )
-            return
-
-    # Check required channels membership
+    # 1. Check required channels membership first
     all_joined, missing = await ChannelService.verify_all_required_channels(
         bot=bot,
         session=session,
@@ -85,7 +74,17 @@ async def handle_start_command(
         )
         return
 
-    # If all requirements satisfied, complete pending referral if any
+    # 2. Check device verification
+    is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
+    if not is_device_ok:
+        await message.answer(
+            format_device_verification_prompt(),
+            reply_markup=get_device_verification_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    # 3. If all requirements satisfied, complete pending referral if any
     if user.referred_by:
         await ReferralService.process_referral_completion(
             session=session,

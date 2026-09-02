@@ -50,19 +50,7 @@ async def handle_channel_verification(
             last_name=from_user.last_name,
         )
 
-    # If user was referred, ensure device verification is completed first
-    if user.referred_by:
-        is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
-        if not is_device_ok:
-            await callback.answer("🔐 Device verification required.", show_alert=True)
-            await safe_edit_message(
-                callback,
-                format_device_verification_prompt(),
-                reply_markup=get_device_verification_keyboard(),
-            )
-            return
-
-    # Check channels via Telegram API
+    # 1. Check channels via Telegram API first
     all_joined, missing = await ChannelService.verify_all_required_channels(
         bot=bot,
         session=session,
@@ -76,15 +64,32 @@ async def handle_channel_verification(
         await safe_edit_message(callback, missing_text, reply_markup=channel_kb)
         return
 
-    # Verification successful
+    # 2. Channels verified! Check if device verification is completed
+    is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
+    if not is_device_ok:
+        await callback.answer("✅ Channels verified! Please verify your device.", show_alert=False)
+        device_text = (
+            format_channel_verified()
+            + "\n\n"
+            + format_device_verification_prompt()
+        )
+        await safe_edit_message(
+            callback,
+            device_text,
+            reply_markup=get_device_verification_keyboard(),
+        )
+        return
+
+    # 3. Verification fully successful
     await callback.answer("✅ Verification successful.", show_alert=False)
 
     # Trigger referral fulfillment (awards +1 point to referrer)
-    reward_given, referrer, pts = await ReferralService.process_referral_completion(
-        session=session,
-        user_id=user.id,
-        bot=bot,
-    )
+    if user.referred_by:
+        reward_given, referrer, pts = await ReferralService.process_referral_completion(
+            session=session,
+            user_id=user.id,
+            bot=bot,
+        )
 
     welcome_text = (
         format_channel_verified()

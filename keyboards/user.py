@@ -4,6 +4,7 @@ from typing import List, Optional
 from urllib.parse import quote_plus
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
+from config import settings
 from models.coupon import Coupon
 from models.channel import Channel
 from models.redemption import Redemption

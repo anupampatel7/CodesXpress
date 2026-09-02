@@ -309,3 +309,141 @@ async def test_privacy_preserving_fingerprint_hashing():
 
     assert len(hash_1) == 64
     assert hash_1 == hash_2
+
+
+@pytest.mark.asyncio
+async def test_channels_verified_then_device_verification_flow(db_session: AsyncSession, mock_bot):
+    """E2E flow: User joins 4 channels -> clicks verify -> gets 'Verify Device' WebApp button -> completes Mini App -> referral released."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import CallbackQuery, Message, User as TgUser, WebAppData
+    from aiogram.enums import ChatMemberStatus
+    from handlers.channels import handle_channel_verification
+    from handlers.device import handle_webapp_verification_data
+
+    # 1. Setup channels
+    for ch in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
+        await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
+    await db_session.commit()
+
+    class MemberJoined:
+        status = ChatMemberStatus.MEMBER
+
+    mock_bot.get_chat_member.return_value = MemberJoined()
+
+    # 2. Setup Referrer and Referred User
+    referrer, _, _ = await UserService.get_or_create_user(db_session, telegram_id=90001, first_name="Referrer")
+    referred_friend, _, _ = await UserService.get_or_create_user(
+        db_session,
+        telegram_id=90002,
+        first_name="ReferredFriend",
+        referral_param=f"ref_{referrer.referral_code}",
+    )
+    await db_session.commit()
+
+    # 3. Friend joins channels and taps 'Verify Membership'
+    mock_cb = MagicMock(spec=CallbackQuery)
+    mock_cb.from_user = MagicMock(spec=TgUser)
+    mock_cb.from_user.id = 90002
+    mock_cb.from_user.first_name = "ReferredFriend"
+    mock_cb.from_user.last_name = None
+    mock_cb.from_user.username = "friend_90002"
+    mock_cb.answer = AsyncMock()
+    mock_cb.message = MagicMock(spec=Message)
+    mock_cb.message.edit_text = AsyncMock()
+
+    await handle_channel_verification(mock_cb, db_session, is_admin=False, bot=mock_bot)
+    await db_session.commit()
+
+    # Verify: Safe edit message was called with device verification prompt & keyboard
+    mock_cb.message.edit_text.assert_called_once()
+    edited_text = mock_cb.message.edit_text.call_args[0][0]
+    edited_kb = mock_cb.message.edit_text.call_args[1].get("reply_markup")
+
+    assert "Device Verification" in edited_text
+    # Verify button exists in keyboard
+    kb_btn_texts = [b.text for row in edited_kb.inline_keyboard for b in row]
+    assert any("Verify Device" in b for b in kb_btn_texts)
+
+    # Verify: Referrer reward is still 0 (held)
+    ref_db = await UserService.get_user_by_id(db_session, referrer.id)
+    assert ref_db.points == 0
+
+    # 4. Now Friend completes Mini App verification (submits web_app_data)
+    mock_msg = MagicMock(spec=Message)
+    mock_msg.from_user = mock_cb.from_user
+    mock_msg.web_app_data = MagicMock(spec=WebAppData)
+    mock_msg.web_app_data.data = json.dumps({
+        "fingerprint": {"device_id": "friend_unique_phone_90002"},
+    })
+    mock_msg.answer = AsyncMock()
+
+    await handle_webapp_verification_data(mock_msg, db_session, is_admin=False, bot=mock_bot)
+    await db_session.commit()
+
+    # Verify: Friend is now device verified and referral reward (+1) is credited to referrer
+    assert await DeviceService.is_device_verified(db_session, 90002) is True
+    ref_db_after = await UserService.get_user_by_id(db_session, referrer.id)
+    assert ref_db_after.points == 1
+
+
+@pytest.mark.asyncio
+async def test_device_verification_failure_cases(db_session: AsyncSession, mock_bot):
+    """Test failure cases: missing channels blocks device step, and duplicate device blocks verification."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import CallbackQuery, Message, User as TgUser, WebAppData
+    from aiogram.enums import ChatMemberStatus
+    from handlers.channels import handle_channel_verification
+    from handlers.device import handle_webapp_verification_data
+
+    # Seed 4 channels
+    for ch in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
+        await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
+    await db_session.commit()
+
+    # Case A: User has NOT joined channels -> shows missing channels prompt, not device prompt
+    class MemberLeft:
+        status = ChatMemberStatus.LEFT
+
+    mock_bot.get_chat_member.return_value = MemberLeft()
+
+    mock_cb = MagicMock(spec=CallbackQuery)
+    mock_cb.from_user = MagicMock(spec=TgUser)
+    mock_cb.from_user.id = 91001
+    mock_cb.from_user.first_name = "MissingChanUser"
+    mock_cb.from_user.last_name = None
+    mock_cb.from_user.username = "user_91001"
+    mock_cb.answer = AsyncMock()
+    mock_cb.message = MagicMock(spec=Message)
+    mock_cb.message.edit_text = AsyncMock()
+
+    await handle_channel_verification(mock_cb, db_session, is_admin=False, bot=mock_bot)
+    mock_cb.message.edit_text.assert_called_once()
+    edited_text = mock_cb.message.edit_text.call_args[0][0]
+    assert "Almost there!" in edited_text or "You still need to join" in edited_text
+    assert "Device Verification" not in edited_text
+
+    # Case B: User attempts verification on a device already bound to another user
+    existing_user_id = 91002
+    fraud_user_id = 91003
+    shared_fp = {"device_id": "exclusive_device_token_xyz"}
+
+    # Existing user binds device
+    s1, _, _ = await DeviceService.verify_and_bind_device(db_session, existing_user_id, shared_fp)
+    await db_session.commit()
+    assert s1 is True
+
+    # Fraud user submits same device via web_app_data
+    mock_msg_fraud = MagicMock(spec=Message)
+    mock_msg_fraud.from_user = MagicMock(spec=TgUser)
+    mock_msg_fraud.from_user.id = fraud_user_id
+    mock_msg_fraud.web_app_data = MagicMock(spec=WebAppData)
+    mock_msg_fraud.web_app_data.data = json.dumps({"fingerprint": shared_fp})
+    mock_msg_fraud.answer = AsyncMock()
+
+    await handle_webapp_verification_data(mock_msg_fraud, db_session, is_admin=False, bot=mock_bot)
+    await db_session.commit()
+
+    mock_msg_fraud.answer.assert_called_once()
+    fraud_out = mock_msg_fraud.answer.call_args[0][0]
+    assert "Verification unavailable" in fraud_out or "already been used" in fraud_out
+    assert await DeviceService.is_device_verified(db_session, fraud_user_id) is False
