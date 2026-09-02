@@ -59,6 +59,20 @@ class ReferralService:
             logger.info(f"Referral #{referral.id} completion held: User #{referred_user.telegram_id} pending device verification")
             return False, None, 0
 
+        if bot:
+            from services.channel_service import ChannelService
+            all_joined, missing = await ChannelService.verify_all_required_channels(
+                bot=bot,
+                session=session,
+                user_telegram_id=referred_user.telegram_id,
+            )
+            if not all_joined:
+                logger.info(
+                    f"Referral #{referral.id} completion held: Referred User #{referred_user.telegram_id} "
+                    f"missing required channel(s): {[c.channel_id for c in missing]}"
+                )
+                return False, None, 0
+
         referrer_id = referral.referrer_id
         points_to_award = settings.POINTS_PER_REFERRAL
 

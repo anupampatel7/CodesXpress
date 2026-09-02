@@ -18,7 +18,7 @@ from aiogram.client.default import DefaultBotProperties
 from config import settings, mask_database_url
 from database import init_db, async_session_factory
 from handlers import setup_routers
-from middlewares import DbSessionMiddleware, AuthMiddleware
+from middlewares import DbSessionMiddleware, AuthMiddleware, ChannelMembershipMiddleware
 from models.channel import Channel
 from services.channel_service import ChannelService
 from utils.security import mask_secret
@@ -122,6 +122,7 @@ async def main() -> None:
     # Register Middlewares
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.update.outer_middleware(AuthMiddleware())
+    dp.update.outer_middleware(ChannelMembershipMiddleware())
 
     # Register Routers
     root_router = setup_routers()

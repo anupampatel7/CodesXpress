@@ -222,15 +222,23 @@ class ChannelService:
         bot: Bot,
         session: AsyncSession,
         user_telegram_id: int,
+        cache: Optional[dict] = None,
     ) -> Tuple[bool, List[Channel]]:
         """Verify that user is a member of all active required channels.
 
         Returns:
             Tuple of (all_joined: bool, missing_channels: List[Channel])
         """
+        cache_key = f"_ch_ver_{user_telegram_id}"
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+
         required_channels = await ChannelService.get_required_channels(session)
         if not required_channels:
-            return True, []
+            res = (True, [])
+            if cache is not None:
+                cache[cache_key] = res
+            return res
 
         missing = []
         for ch in required_channels:
@@ -238,5 +246,8 @@ class ChannelService:
             if not is_member:
                 missing.append(ch)
 
-        return (len(missing) == 0), missing
+        res = (len(missing) == 0), missing
+        if cache is not None:
+            cache[cache_key] = res
+        return res
 

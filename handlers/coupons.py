@@ -3,13 +3,14 @@
 import logging
 import asyncio
 from typing import Set, Tuple
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from services.user_service import UserService
 from services.coupon_service import CouponService
 from services.stock_service import StockService
+from services.channel_service import ChannelService
 from models.coupon import Coupon
 from keyboards.user import (
     BrandNavCallback,
@@ -25,6 +26,7 @@ from keyboards.user import (
     get_insufficient_points_keyboard,
     get_back_to_menu_keyboard,
     get_check_stock_keyboard,
+    get_channels_keyboard,
 )
 from utils.formatting import (
     format_coupon_detail,
@@ -32,6 +34,7 @@ from utils.formatting import (
     format_redemption_success,
     format_insufficient_points,
     format_coupon_stock_overview,
+    format_channel_missing,
     safe_edit_message,
 )
 
@@ -219,12 +222,26 @@ async def handle_coupon_redemption(
     callback: CallbackQuery,
     callback_data: CouponRedeemCallback,
     session: AsyncSession,
+    bot: Bot,
 ) -> None:
     """Execute atomic coupon redemption with duplicate-click protection."""
     from_user = callback.from_user
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if not user:
         await callback.answer("❌ User not found.", show_alert=True)
+        return
+
+    # Re-verify mandatory channel membership
+    all_joined, missing = await ChannelService.verify_all_required_channels(
+        bot=bot,
+        session=session,
+        user_telegram_id=from_user.id,
+    )
+    if not all_joined and missing:
+        await callback.answer("⚠️ Membership required in all channels to redeem.", show_alert=True)
+        channel_kb = get_channels_keyboard(missing, is_retry=True)
+        missing_text = format_channel_missing(missing)
+        await safe_edit_message(callback, missing_text, reply_markup=channel_kb)
         return
 
     coupon_id = callback_data.coupon_id
