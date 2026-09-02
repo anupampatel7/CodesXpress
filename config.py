@@ -129,15 +129,15 @@ class Settings(BaseSettings):
     )
     WEBAPP_HOST: str = Field(
         default="0.0.0.0",
-        description="Host address for the aiohttp WebApp and health server",
+        description="Host address for Render",
     )
     PORT: Optional[int] = Field(
         default=None,
-        description="Port provided dynamically by cloud host (Render $PORT)",
+        description="Render-provided PORT",
     )
     WEBAPP_PORT: int = Field(
-        default=8080,
-        description="Local fallback port for the aiohttp WebApp and health server",
+        default=10000,
+        description="Fallback port",
     )
 
     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -209,15 +209,17 @@ class Settings(BaseSettings):
 
     @property
     def server_port(self) -> int:
-        """Return dynamic cloud host PORT (Render) if provided, otherwise fallback to WEBAPP_PORT."""
-        if self.PORT is not None:
-            return self.PORT
-        env_port = os.getenv("PORT")
-        if env_port:
+        port = os.getenv("PORT")
+
+        if port:
             try:
-                return int(env_port)
+                return int(port)
             except ValueError:
                 pass
+
+        if self.PORT is not None:
+            return self.PORT
+
         return self.WEBAPP_PORT
 
     @property

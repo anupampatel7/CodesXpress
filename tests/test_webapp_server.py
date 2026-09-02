@@ -139,15 +139,17 @@ def test_health_and_dynamic_port_configuration(monkeypatch):
     from config import Settings
 
     # Case 1: Default when PORT is not set
+    monkeypatch.delenv("PORT", raising=False)
     s_default = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1)
-    assert s_default.server_port == 8080
+    assert s_default.server_port == 10000
 
-    # Case 2: Render supplies PORT=10000
-    monkeypatch.setenv("PORT", "10000")
+    # Case 2: Render supplies PORT=12345
+    monkeypatch.setenv("PORT", "12345")
     s_render = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1)
-    assert s_render.server_port == 10000
+    assert s_render.server_port == 12345
 
-    # Case 3: Explicit PORT parameter passed
+    # Case 3: Explicit PORT parameter passed without env var
+    monkeypatch.delenv("PORT", raising=False)
     s_custom = Settings(BOT_TOKEN="123:abc", ADMIN_ID=1, PORT=9090)
     assert s_custom.server_port == 9090
 
