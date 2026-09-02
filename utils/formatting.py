@@ -172,17 +172,16 @@ def to_number_emoji(num: int) -> str:
 
 
 def format_coupon_stock_overview(coupon_stocks: List[Any]) -> str:
-    """Format public coupon inventory stock overview."""
+    """Format coupon inventory stock overview showing coupon name and available count."""
     if not coupon_stocks:
         return "📦 <b>Coupon Stock</b>\n\nNo active coupons currently available."
 
     lines = ["📦 <b>Coupon Stock</b>\n"]
     for coupon, stock in coupon_stocks:
         indicator = "🟢" if stock > 0 else "🔴"
-        pts_emoji = to_number_emoji(coupon.points_required)
-        stock_label = f"{stock} available" if stock > 0 else "Out of Stock"
         title = escape(coupon.title)
-        lines.append(f"{indicator} {title} : {pts_emoji} — {stock_label}")
+        available_count = max(0, stock)
+        lines.append(f"{indicator} {title} — {available_count} available")
 
     return "\n".join(lines)
 

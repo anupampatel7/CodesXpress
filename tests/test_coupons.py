@@ -514,8 +514,8 @@ async def test_public_check_stock_flow(db_session: AsyncSession):
 
     # Check displayed format
     assert "📦 <b>Coupon Stock</b>" in overview_text
-    assert "🟢 Active Store : 4️⃣ — 3 available" in overview_text
-    assert "🔴 Empty Store : 2️⃣ — Out of Stock" in overview_text
+    assert "🟢 Active Store — 3 available" in overview_text
+    assert "🔴 Empty Store — 0 available" in overview_text
     # Inactive coupon must NOT appear
     assert "Disabled Store" not in overview_text
 
@@ -527,9 +527,16 @@ async def test_public_check_stock_flow(db_session: AsyncSession):
     await handle_check_stock(mock_msg, db_session)
     mock_msg.answer.assert_called_once()
     msg_out = mock_msg.answer.call_args[0][0]
+    reply_kb = mock_msg.answer.call_args[1].get("reply_markup")
     assert "📦 <b>Coupon Stock</b>" in msg_out
-    assert "🟢 Active Store : 4️⃣ — 3 available" in msg_out
-    assert "🔴 Empty Store : 2️⃣ — Out of Stock" in msg_out
+    assert "🟢 Active Store — 3 available" in msg_out
+    assert "🔴 Empty Store — 0 available" in msg_out
+
+    # Verify no 'View Coupons' button on Stock screen
+    if reply_kb:
+        stock_btns = [btn.text for row in reply_kb.inline_keyboard for btn in row]
+        assert not any("View Coupons" in b for b in stock_btns)
+        assert any("Back" in b for b in stock_btns)
 
     # 5. User redeems 1 code -> Verify stock decreases to 2 immediately
     buyer, _, _ = await UserService.get_or_create_user(db_session, 888111, first_name="Buyer")
@@ -543,7 +550,7 @@ async def test_public_check_stock_flow(db_session: AsyncSession):
     # Check stock again
     stocks_after = await StockService.get_all_active_coupons_stock(db_session)
     overview_after = format_coupon_stock_overview(stocks_after)
-    assert "🟢 Active Store : 4️⃣ — 2 available" in overview_after
+    assert "🟢 Active Store — 2 available" in overview_after
 
 
 

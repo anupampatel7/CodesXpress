@@ -99,10 +99,9 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
 
 
 def get_check_stock_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard for public stock check view."""
+    """Keyboard for stock check view."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 View Coupons", callback_data="menu_coupons")],
             [InlineKeyboardButton(text="🔙 Back", callback_data="menu_home")],
         ]
     )
