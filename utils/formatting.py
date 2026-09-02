@@ -60,10 +60,19 @@ def format_channel_missing(missing_channels: List) -> str:
 
 
 def format_channel_verified() -> str:
-    """Format channel verification complete message."""
+    """Format channel membership verification success notice."""
+    return (
+        "📢 <b>Channels Verified!</b>\n\n"
+        "You have joined all required channels."
+    )
+
+
+def format_account_activated() -> str:
+    """Format final account activation notice after all verifications succeed."""
     return (
         "✅ <b>Verification Complete</b>\n\n"
-        "Your referral reward has been activated. ⭐"
+        "Your device has been verified successfully.\n"
+        "Your account is now activated. 🎉"
     )
 
 
@@ -98,8 +107,9 @@ def format_device_blocked() -> str:
 def format_device_verification_success() -> str:
     """Format device verification success notice."""
     return (
-        "✅ <b>Verification complete.</b>\n\n"
-        "Now join all required channels to activate your referral."
+        "✅ <b>Verification Complete</b>\n\n"
+        "Your device has been verified successfully.\n"
+        "Your account is now activated. 🎉"
     )
 
 

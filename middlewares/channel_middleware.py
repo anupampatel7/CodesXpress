@@ -20,6 +20,7 @@ class ChannelMembershipMiddleware(BaseMiddleware):
     EXEMPT_CALLBACKS = {
         "verify_channels_click",
         "device_verify_action",
+        "device_check_refresh",
         "menu_support",
         "support_contact_admin",
         "support_cancel",

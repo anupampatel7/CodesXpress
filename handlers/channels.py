@@ -18,6 +18,7 @@ from utils.formatting import (
     format_user_welcome,
     format_channel_missing,
     format_channel_verified,
+    format_account_activated,
     format_device_verification_prompt,
     safe_edit_message,
 )
@@ -34,7 +35,7 @@ async def handle_channel_verification(
     is_admin: bool,
     bot: Bot,
 ) -> None:
-    """Verify that the user joined all required channels and finalize referral reward."""
+    """Verify that the user joined all required channels and prompt device verification if needed."""
     from_user = callback.from_user
     if not from_user:
         await callback.answer("User error", show_alert=True)
@@ -92,7 +93,7 @@ async def handle_channel_verification(
         )
 
     welcome_text = (
-        format_channel_verified()
+        format_account_activated()
         + "\n\n"
         + format_user_welcome(user, settings.BOT_USERNAME)
     )

@@ -56,6 +56,47 @@ async def handle_post_verify_device(request: web.Request) -> web.Response:
         )
         if success:
             await session.commit()
+
+            # Push real-time Telegram activation message to user if all requirements are satisfied
+            bot = request.app.get("bot")
+            if bot:
+                try:
+                    from services.user_service import UserService
+                    from services.channel_service import ChannelService
+                    from services.referral_service import ReferralService
+                    from keyboards.user import get_main_menu_keyboard
+                    from utils.formatting import format_user_welcome, format_account_activated
+
+                    user = await UserService.get_user_by_telegram_id(session, telegram_user_id)
+                    if user:
+                        all_joined, missing = await ChannelService.verify_all_required_channels(
+                            bot=bot,
+                            session=session,
+                            user_telegram_id=telegram_user_id,
+                        )
+                        if all_joined:
+                            if user.referred_by:
+                                await ReferralService.process_referral_completion(
+                                    session=session,
+                                    user_id=user.id,
+                                    bot=bot,
+                                )
+                                await session.commit()
+                            welcome_text = (
+                                format_account_activated()
+                                + "\n\n"
+                                + format_user_welcome(user, settings.BOT_USERNAME)
+                            )
+                            menu_kb = get_main_menu_keyboard(is_admin=settings.is_admin(telegram_user_id))
+                            await bot.send_message(
+                                chat_id=telegram_user_id,
+                                text=welcome_text,
+                                reply_markup=menu_kb,
+                                parse_mode="HTML",
+                            )
+                except Exception as e:
+                    logger.warning(f"Could not push activation message to user {telegram_user_id}: {e}")
+
             return web.json_response({"success": True, "code": code, "message": "Device verified successfully."})
         else:
             await session.rollback()

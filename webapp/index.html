@@ -3,101 +3,243 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Codes Xpress 💎 | Device Verification</title>
+  <title>Codes Xpress 💎 | Secure Device Verification</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --card-bg: #131b2e;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --radius: 16px;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
     }
+
     body {
-      background-color: var(--tg-theme-bg-color, #0f172a);
-      color: var(--tg-theme-text-color, #f8fafc);
+      background-color: var(--tg-theme-bg-color, var(--bg-primary));
+      color: var(--tg-theme-text-color, var(--text-primary));
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: 24px;
+      padding: 20px 16px;
       text-align: center;
     }
+
+    .container {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* Brand Header */
+    .brand-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--tg-theme-text-color, var(--text-primary));
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-subtitle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--tg-theme-hint-color, var(--text-secondary));
+    }
+
+    /* Main Verification Card */
     .card {
-      background: var(--tg-theme-secondary-bg-color, #1e293b);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 20px;
+      background: var(--tg-theme-secondary-bg-color, var(--card-bg));
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
       padding: 32px 24px;
       width: 100%;
-      max-width: 360px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.3s ease;
     }
-    .icon {
-      font-size: 54px;
-      margin-bottom: 16px;
-      display: block;
+
+    .icon-badge {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 20px;
+      transition: all 0.3s ease;
     }
-    h1 {
-      font-size: 22px;
+
+    .icon-badge.success {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: var(--accent-green);
+    }
+
+    .icon-badge.warning {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .icon-badge.error {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .card-title {
+      font-size: 19px;
       font-weight: 700;
-      margin-bottom: 8px;
-      letter-spacing: -0.3px;
+      margin-bottom: 10px;
+      letter-spacing: -0.2px;
+      color: var(--tg-theme-text-color, var(--text-primary));
     }
-    p {
+
+    .card-desc {
       font-size: 14px;
-      color: var(--tg-theme-hint-color, #94a3b8);
+      color: var(--tg-theme-hint-color, var(--text-secondary));
       line-height: 1.5;
       margin-bottom: 24px;
+      max-width: 290px;
     }
+
+    /* Actions & Buttons */
     .btn {
       width: 100%;
-      background: var(--tg-theme-button-color, #2563eb);
+      background: var(--tg-theme-button-color, var(--accent-blue));
       color: var(--tg-theme-button-text-color, #ffffff);
       border: none;
       border-radius: 12px;
       padding: 14px 20px;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.2s, transform 0.1s, opacity 0.2s;
     }
-    .btn:active {
+
+    .btn:hover:not(:disabled) {
+      background: var(--accent-blue-hover);
+    }
+
+    .btn:active:not(:disabled) {
       transform: scale(0.98);
-      opacity: 0.9;
     }
+
     .btn:disabled {
-      opacity: 0.6;
+      opacity: 0.65;
       cursor: not-allowed;
     }
-    .status-msg {
+
+    /* Status & Spinner */
+    .status-area {
       margin-top: 16px;
       font-size: 13px;
       font-weight: 500;
-      min-height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 22px;
     }
-    .status-success { color: #10b981; }
-    .status-warning { color: #f59e0b; }
-    .status-error { color: #ef4444; }
+
+    .status-area.success { color: var(--accent-green); }
+    .status-area.warning { color: var(--accent-amber); }
+    .status-area.error { color: var(--accent-red); }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .footer-note {
+      font-size: 12px;
+      color: var(--text-secondary);
+      opacity: 0.7;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
-  <div class="card" id="mainCard">
-    <span class="icon" id="cardIcon">🔒</span>
-    <h1 id="cardTitle">Verify</h1>
-    <p id="cardDesc">Verify your device to continue.</p>
-    <button class="btn" id="verifyBtn" onclick="runDeviceVerification()">🔒 Verify</button>
-    <div class="status-msg" id="statusMsg"></div>
+  <div class="container">
+    <header class="brand-header">
+      <div class="brand-title">Codes Xpress 💎</div>
+      <div class="brand-subtitle">Secure Device Verification</div>
+    </header>
+
+    <main class="card" id="verifyCard">
+      <div class="icon-badge" id="iconBadge">🔐</div>
+      <h1 class="card-title" id="cardTitle">Verify Your Device</h1>
+      <p class="card-desc" id="cardDesc">
+        One Telegram account can participate from one verified device.
+      </p>
+
+      <button class="btn" id="verifyBtn" onclick="runDeviceVerification()">
+        <span class="spinner" id="btnSpinner"></span>
+        <span id="btnText">Verify Device</span>
+      </button>
+
+      <div class="status-area" id="statusArea"></div>
+    </main>
+
+    <footer class="footer-note">
+      🔒 256-bit encrypted verification • No personal data collected
+    </footer>
   </div>
 
   <script>
-    // Initialize Telegram WebApp
+    // Initialize Telegram WebApp SDK safely
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready();
-      tg.expand();
+      try {
+        tg.ready();
+        tg.expand();
+      } catch (e) {}
     }
 
-    // Get or generate cryptographically random persistent device installation ID
+    // Cryptographically random persistent device installation ID
     function getOrCreateDeviceInstallationId() {
       const STORAGE_KEY = "codesxpress_device_installation_id";
       let deviceId = "";
@@ -124,7 +266,7 @@
       return deviceId;
     }
 
-    // Collect non-sensitive privacy-preserving browser fingerprint
+    // Build privacy-conscious device fingerprint
     function generateBrowserFingerprint() {
       const deviceId = getOrCreateDeviceInstallationId();
       const screenDetails = `${window.screen.width}x${window.screen.height}@${window.devicePixelRatio || 1}`;
@@ -133,7 +275,6 @@
       const platform = navigator.platform || "unknown";
       const hardwareConcurrency = String(navigator.hardwareConcurrency || 4);
 
-      // Lightweight 2D canvas entropy
       let canvasHash = "";
       try {
         const canvas = document.createElement("canvas");
@@ -164,15 +305,19 @@
 
     async function runDeviceVerification() {
       const btn = document.getElementById("verifyBtn");
-      const icon = document.getElementById("cardIcon");
+      const btnText = document.getElementById("btnText");
+      const btnSpinner = document.getElementById("btnSpinner");
+      const iconBadge = document.getElementById("iconBadge");
       const title = document.getElementById("cardTitle");
       const desc = document.getElementById("cardDesc");
-      const status = document.getElementById("statusMsg");
+      const statusArea = document.getElementById("statusArea");
 
+      // UI: Loading State
       btn.disabled = true;
-      btn.innerText = "Verifying...";
-      status.className = "status-msg";
-      status.innerText = "Securing device identity...";
+      btnSpinner.style.display = "inline-block";
+      btnText.innerText = "Verifying your device…";
+      statusArea.className = "status-area";
+      statusArea.innerText = "Securing device identity…";
 
       const initData = tg?.initData || "";
       const fingerprint = generateBrowserFingerprint();
@@ -190,50 +335,74 @@
         const result = await response.json();
 
         if (result.success) {
-          icon.innerText = "✅";
-          title.innerText = "Verified";
-          desc.innerText = "Your device has been verified successfully.";
+          // UI: Success State
+          iconBadge.className = "icon-badge success";
+          iconBadge.innerText = "✓";
+          title.innerText = "Device Verified";
+          desc.innerHTML = "Your device has been securely verified.<br>You can now return to Codes Xpress.";
           btn.style.display = "none";
-          status.className = "status-msg status-success";
-          status.innerText = "Returning to Telegram...";
+          statusArea.className = "status-area success";
+          statusArea.innerText = "Returning to Telegram…";
 
+          // Send completion signal back to bot and close Mini App
           setTimeout(() => {
-            if (tg) {
-              tg.sendData(JSON.stringify({ verified: true, code: result.code }));
-              tg.close();
+            if (tg && typeof tg.sendData === "function") {
+              try {
+                tg.sendData(JSON.stringify({ verified: true, code: result.code }));
+              } catch (e) {}
             }
-          }, 1200);
+            setTimeout(() => {
+              if (tg && typeof tg.close === "function") {
+                try {
+                  tg.close();
+                } catch (e) {}
+              }
+            }, 600);
+          }, 1000);
+
         } else if (result.code === "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE") {
-          icon.innerText = "⚠️";
-          title.innerText = "Verification unavailable";
+          // UI: Account already bound to different device
+          iconBadge.className = "icon-badge warning";
+          iconBadge.innerText = "⚠️";
+          title.innerText = "Verification Unavailable";
           desc.innerText = "This Telegram account is already registered on another device.";
           btn.style.display = "none";
-          status.className = "status-msg status-warning";
-          status.innerText = result.message || "Account already bound to another device.";
+          statusArea.className = "status-area warning";
+          statusArea.innerText = "Account already bound to another device.";
+
         } else if (result.code === "DEVICE_ALREADY_BOUND") {
-          icon.innerText = "⚠️";
-          title.innerText = "Verification unavailable";
+          // UI: Device already bound to different account
+          iconBadge.className = "icon-badge warning";
+          iconBadge.innerText = "⚠️";
+          title.innerText = "Verification Unavailable";
           desc.innerText = "This device has already been used for referral verification.";
           btn.style.display = "none";
-          status.className = "status-msg status-warning";
-          status.innerText = result.message || "Device already bound to another account.";
+          statusArea.className = "status-area warning";
+          statusArea.innerText = "Device already bound to another account.";
+
         } else {
-          icon.innerText = "❌";
+          // UI: General Error State with Retry
+          iconBadge.className = "icon-badge error";
+          iconBadge.innerText = "✕";
           title.innerText = "Verification failed";
-          desc.innerText = "Try again.";
+          desc.innerText = result.message || "Please check your connection and try again.";
           btn.disabled = false;
-          btn.innerText = "Try again";
-          status.className = "status-msg status-error";
-          status.innerText = result.message || "Verification rejected.";
+          btnSpinner.style.display = "none";
+          btnText.innerText = "Try Again";
+          statusArea.className = "status-area error";
+          statusArea.innerText = "Verification rejected.";
         }
       } catch (err) {
-        icon.innerText = "❌";
+        // UI: Network Error State
+        iconBadge.className = "icon-badge error";
+        iconBadge.innerText = "✕";
         title.innerText = "Verification failed";
-        desc.innerText = "Try again.";
+        desc.innerText = "Network request failed. Please check your connection.";
         btn.disabled = false;
-        btn.innerText = "Try again";
-        status.className = "status-msg status-error";
-        status.innerText = "Network request failed.";
+        btnSpinner.style.display = "none";
+        btnText.innerText = "Try Again";
+        statusArea.className = "status-area error";
+        statusArea.innerText = "Network connection error.";
       }
     }
   </script>

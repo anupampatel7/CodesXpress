@@ -134,6 +134,7 @@ async def main() -> None:
 
     server_port = settings.server_port
     webapp_app = create_webapp_application()
+    webapp_app["bot"] = bot
     runner = web.AppRunner(webapp_app)
     await runner.setup()
     site = web.TCPSite(runner, host=settings.WEBAPP_HOST, port=server_port)

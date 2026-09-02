@@ -447,3 +447,126 @@ async def test_device_verification_failure_cases(db_session: AsyncSession, mock_
     fraud_out = mock_msg_fraud.answer.call_args[0][0]
     assert "Verification unavailable" in fraud_out or "already been used" in fraud_out
     assert await DeviceService.is_device_verified(db_session, fraud_user_id) is False
+
+
+@pytest.mark.asyncio
+async def test_device_check_refresh_flow(db_session: AsyncSession, mock_bot):
+    """Test 'Check Verification' callback before and after Mini App verification."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import CallbackQuery, Message, User as TgUser
+    from aiogram.enums import ChatMemberStatus
+    from handlers.device import handle_device_check_refresh
+
+    # 1. Setup channels
+    for ch in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
+        await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
+    await db_session.commit()
+
+    class MemberJoined:
+        status = ChatMemberStatus.MEMBER
+
+    mock_bot.get_chat_member.return_value = MemberJoined()
+
+    user_id = 95001
+    user, _, _ = await UserService.get_or_create_user(db_session, telegram_id=user_id, first_name="RefreshUser")
+    await db_session.commit()
+
+    mock_cb = MagicMock(spec=CallbackQuery)
+    mock_cb.from_user = MagicMock(spec=TgUser)
+    mock_cb.from_user.id = user_id
+    mock_cb.answer = AsyncMock()
+    mock_cb.message = MagicMock(spec=Message)
+    mock_cb.message.edit_text = AsyncMock()
+
+    # Step A: Taps Check Verification before verifying in Mini App -> alert shown, message not edited to active
+    await handle_device_check_refresh(mock_cb, db_session, is_admin=False, bot=mock_bot)
+    mock_cb.answer.assert_called_once()
+    alert_text = mock_cb.answer.call_args[0][0]
+    assert "Device not yet verified" in alert_text
+    mock_cb.message.edit_text.assert_not_called()
+
+    # Step B: User verifies device in Mini App
+    await DeviceService.verify_and_bind_device(db_session, user_id, {"device_id": "inst_refresh_95001"})
+    await db_session.commit()
+
+    # Step C: Taps Check Verification after verifying -> success, edited to activated state with main menu
+    mock_cb.answer.reset_mock()
+    await handle_device_check_refresh(mock_cb, db_session, is_admin=False, bot=mock_bot)
+    mock_cb.message.edit_text.assert_called_once()
+    final_text = mock_cb.message.edit_text.call_args[0][0]
+    assert "Verification Complete" in final_text
+    assert "account is now activated" in final_text
+
+
+@pytest.mark.asyncio
+async def test_webapp_server_push_on_verification_success(db_session: AsyncSession, mock_bot):
+    """Test that POST /api/verify-device pushes real-time activation to user and releases referral once."""
+    from aiohttp.test_utils import TestClient, TestServer
+    from services.webapp_server import create_webapp_application
+    from aiogram.enums import ChatMemberStatus
+    from unittest.mock import AsyncMock
+
+    for ch in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
+        await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
+    await db_session.commit()
+
+    class MemberJoined:
+        status = ChatMemberStatus.MEMBER
+
+    mock_bot.get_chat_member.return_value = MemberJoined()
+    mock_bot.send_message = AsyncMock()
+
+    # Create Referrer & Friend
+    referrer, _, _ = await UserService.get_or_create_user(db_session, telegram_id=96001, first_name="PushReferrer")
+    friend, _, _ = await UserService.get_or_create_user(
+        db_session,
+        telegram_id=96002,
+        first_name="PushFriend",
+        referral_param=f"ref_{referrer.referral_code}",
+    )
+    await db_session.commit()
+
+    app = create_webapp_application()
+    app["bot"] = mock_bot
+    client = TestClient(TestServer(app))
+    await client.start_server()
+
+    try:
+        # Build genuine initData for friend
+        user_payload = {"id": 96002, "first_name": "PushFriend"}
+        user_json = json.dumps(user_payload, separators=(",", ":"))
+        auth_date = str(int(time.time()))
+        query_id = "AAHdF6IQAAAAAN0XohD34"
+        data_pairs = [f"auth_date={auth_date}", f"query_id={query_id}", f"user={user_json}"]
+        data_check_string = "\n".join(sorted(data_pairs))
+        secret_key = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+        correct_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        init_data_str = f"auth_date={auth_date}&query_id={query_id}&user={urllib.parse.quote(user_json)}&hash={correct_hash}"
+
+        fp = {"device_id": "push_phone_96002"}
+
+        # 1. First POST /api/verify-device -> 200, pushes activation to friend, credits +1 to referrer
+        resp = await client.post("/api/verify-device", json={"init_data": init_data_str, "fingerprint": fp})
+        assert resp.status == 200
+        res_json = await resp.json()
+        assert res_json["success"] is True
+
+        # Assert push notification was sent
+        mock_bot.send_message.assert_called()
+        push_call = [call for call in mock_bot.send_message.call_args_list if call[1].get("chat_id") == 96002 or (call[0] and call[0][0] == 96002)]
+        assert len(push_call) > 0
+
+        # Assert referrer received +1 point
+        ref_pk = referrer.id
+        db_session.expire_all()
+        ref_check = await UserService.get_user_by_id(db_session, ref_pk)
+        assert ref_check.points == 1
+
+        # 2. Second repeat POST /api/verify-device -> 200 (Already verified), does NOT duplicate points
+        resp2 = await client.post("/api/verify-device", json={"init_data": init_data_str, "fingerprint": fp})
+        assert resp2.status == 200
+        db_session.expire_all()
+        ref_check2 = await UserService.get_user_by_id(db_session, ref_pk)
+        assert ref_check2.points == 1  # Still exactly 1
+    finally:
+        await client.close()

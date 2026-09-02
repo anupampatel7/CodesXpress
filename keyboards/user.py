@@ -292,6 +292,9 @@ def get_device_verification_keyboard(webapp_url: Optional[str] = None) -> Inline
             InlineKeyboardButton(text="🔒 Verify Device", callback_data="device_verify_action")
         ])
     buttons.append([
+        InlineKeyboardButton(text="🔄 Check Verification", callback_data="device_check_refresh")
+    ])
+    buttons.append([
         InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),
         InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home"),
     ])
