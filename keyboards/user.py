@@ -282,12 +282,13 @@ def get_device_verification_keyboard(webapp_url: Optional[str] = None) -> Inline
     buttons = []
     if target_url and target_url.startswith("https://"):
         from aiogram.types import WebAppInfo
+        verify_url = target_url if target_url.endswith("/verify") else f"{target_url.rstrip('/')}/verify"
         buttons.append([
-            InlineKeyboardButton(text="🔒 Verify", web_app=WebAppInfo(url=target_url))
+            InlineKeyboardButton(text="🔒 Verify Device", web_app=WebAppInfo(url=verify_url))
         ])
     else:
         buttons.append([
-            InlineKeyboardButton(text="🔒 Verify", callback_data="device_verify_action")
+            InlineKeyboardButton(text="🔒 Verify Device", callback_data="device_verify_action")
         ])
     buttons.append([
         InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),

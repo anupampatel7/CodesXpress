@@ -30,29 +30,37 @@ def mask_secret(secret: Optional[str], visible_chars: int = 4) -> str:
     return f"{secret[:visible_chars]}...{secret[-visible_chars:]}"
 
 
+import time
+
+
 def hash_device_fingerprint(fingerprint_data: Any) -> str:
     """Compute deterministic, privacy-preserving SHA-256 hash of device attributes.
-    
-    Excludes volatile fields (such as timestamps, IP, random nonces) to ensure stable identity.
+
+    If a cryptographically random persistent device installation ID is provided,
+    it is bound directly. Otherwise, stable browser hardware and canvas entropy are used.
     """
     if isinstance(fingerprint_data, dict):
-        # Pick stable canonical features
-        canonical = {
-            "screen": str(fingerprint_data.get("screen", "")).strip(),
-            "timezone": str(fingerprint_data.get("timezone", "")).strip(),
-            "language": str(fingerprint_data.get("language", "")).strip(),
-            "platform": str(fingerprint_data.get("platform", "")).strip(),
-            "hardware_concurrency": str(fingerprint_data.get("hardware_concurrency", "")).strip(),
-            "canvas": str(fingerprint_data.get("canvas", "")).strip(),
-            "webgl": str(fingerprint_data.get("webgl", "")).strip(),
-            "audio": str(fingerprint_data.get("audio", "")).strip(),
-        }
-        # If standard keys missing, use sorted items
-        if not any(canonical.values()):
-            filtered = {k: str(v).strip() for k, v in fingerprint_data.items() if k not in ("ip", "time", "timestamp", "auth_date")}
-            serialized = json.dumps(filtered, sort_keys=True, separators=(",", ":"))
+        device_id = str(fingerprint_data.get("device_id", "")).strip()
+        if device_id:
+            serialized = f"dev_id:{device_id}"
         else:
-            serialized = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+            # Pick stable canonical features
+            canonical = {
+                "screen": str(fingerprint_data.get("screen", "")).strip(),
+                "timezone": str(fingerprint_data.get("timezone", "")).strip(),
+                "language": str(fingerprint_data.get("language", "")).strip(),
+                "platform": str(fingerprint_data.get("platform", "")).strip(),
+                "hardware_concurrency": str(fingerprint_data.get("hardware_concurrency", "")).strip(),
+                "canvas": str(fingerprint_data.get("canvas", "")).strip(),
+                "webgl": str(fingerprint_data.get("webgl", "")).strip(),
+                "audio": str(fingerprint_data.get("audio", "")).strip(),
+            }
+            # If standard keys missing, use sorted items
+            if not any(canonical.values()):
+                filtered = {k: str(v).strip() for k, v in fingerprint_data.items() if k not in ("ip", "time", "timestamp", "auth_date")}
+                serialized = json.dumps(filtered, sort_keys=True, separators=(",", ":"))
+            else:
+                serialized = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     elif isinstance(fingerprint_data, str):
         serialized = fingerprint_data.strip()
     else:
@@ -61,9 +69,13 @@ def hash_device_fingerprint(fingerprint_data: Any) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def validate_telegram_webapp_init_data(init_data: str, bot_token: str) -> Optional[Dict[str, Any]]:
-    """Validate Telegram WebApp initData query string using HMAC-SHA256.
-    
+def validate_telegram_webapp_init_data(
+    init_data: str,
+    bot_token: str,
+    max_age_seconds: Optional[int] = 86400,
+) -> Optional[Dict[str, Any]]:
+    """Validate Telegram WebApp initData query string using HMAC-SHA256 and expiration check.
+
     Reference: https://core.telegram.org/bots/webapps#validating-data-received-via-the-web-app
     """
     if not init_data or not bot_token:
@@ -80,7 +92,6 @@ def validate_telegram_webapp_init_data(init_data: str, bot_token: str) -> Option
         data_pairs = []
         for key in sorted(parsed.keys()):
             if key != "hash":
-                # Take first value for each key
                 val = parsed[key][0]
                 data_pairs.append(f"{key}={val}")
 
@@ -101,9 +112,20 @@ def validate_telegram_webapp_init_data(init_data: str, bot_token: str) -> Option
         ).hexdigest()
 
         if hmac.compare_digest(calculated_hash, received_hash):
+            auth_date_raw = parsed.get("auth_date", [None])[0]
+            if max_age_seconds is not None and auth_date_raw:
+                try:
+                    auth_timestamp = int(auth_date_raw)
+                    current_timestamp = int(time.time())
+                    # Check if expired or clock skewed into future > 5 minutes
+                    if current_timestamp - auth_timestamp > max_age_seconds or auth_timestamp - current_timestamp > 300:
+                        return None
+                except (ValueError, TypeError):
+                    return None
+
             user_json_str = parsed.get("user", [None])[0]
             result = {
-                "auth_date": parsed.get("auth_date", [None])[0],
+                "auth_date": auth_date_raw,
                 "query_id": parsed.get("query_id", [None])[0],
             }
             if user_json_str:

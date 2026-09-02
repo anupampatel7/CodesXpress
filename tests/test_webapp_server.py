@@ -14,11 +14,14 @@ from models.device_binding import DeviceBinding, DeviceBindingStatus
 from database import async_session_factory
 
 
+import time
+
+
 def generate_test_init_data(bot_token: str, user_id: int, first_name: str = "Test") -> str:
-    """Helper to generate authentic HMAC-SHA256 initData string."""
+    """Helper to generate authentic HMAC-SHA256 initData string with current timestamp."""
     user_payload = {"id": user_id, "first_name": first_name, "username": f"user_{user_id}"}
     user_json = json.dumps(user_payload, separators=(",", ":"))
-    auth_date = "1700000000"
+    auth_date = str(int(time.time()))
     query_id = "AAHdF6IQAAAAAN0XohD34"
 
     data_pairs = [
@@ -130,6 +133,14 @@ async def test_webapp_post_verify_genuine_device_binding(db_session: AsyncSessio
         data_b = await resp_b.json()
         assert data_b["success"] is False
         assert data_b["code"] == "DEVICE_ALREADY_BOUND"
+
+        # 4. User A tries to use a different device -> 403 Forbidden (USER_ALREADY_BOUND_TO_ANOTHER_DEVICE)
+        fp_different = {"device_id": "different_laptop_user_a"}
+        resp_a_diff = await client.post("/api/verify-device", json={"init_data": init_data_a, "fingerprint": fp_different})
+        assert resp_a_diff.status == 403
+        data_a_diff = await resp_a_diff.json()
+        assert data_a_diff["success"] is False
+        assert data_a_diff["code"] == "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE"
     finally:
         await client.close()
 

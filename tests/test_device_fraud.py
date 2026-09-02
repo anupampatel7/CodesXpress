@@ -1,8 +1,10 @@
 """Comprehensive anti-fraud device binding, WebApp validation, and referral protection tests."""
 
+import asyncio
 import hashlib
 import hmac
 import json
+import time
 import urllib.parse
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,11 +29,11 @@ async def test_new_user_new_device_success(db_session: AsyncSession):
     """Case 1: User A on new device binds successfully."""
     user_id = 10001
     fp = {
+        "device_id": "9f8a8b8c-1234-5678-90ab-cdef12345678",
         "screen": "1920x1080",
         "timezone": "Asia/Kolkata",
         "language": "en-US",
         "platform": "Win32",
-        "hardware_concurrency": "8",
     }
 
     success, code, binding = await DeviceService.verify_and_bind_device(
@@ -50,17 +52,57 @@ async def test_new_user_new_device_success(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_same_user_same_device_allowed(db_session: AsyncSession):
+    """Case 2: Same user returning on previously registered device is allowed."""
+    user_id = 15001
+    fp = {"device_id": "inst_device_15001_abc"}
+
+    # 1. First binding -> Success
+    s1, c1, _ = await DeviceService.verify_and_bind_device(db_session, user_id, fp)
+    await db_session.commit()
+    assert s1 is True
+    assert c1 == "DEVICE_BOUND_NEW"
+
+    # 2. Returning on same device -> Success
+    s2, c2, binding2 = await DeviceService.verify_and_bind_device(db_session, user_id, fp)
+    await db_session.commit()
+    assert s2 is True
+    assert c2 == "DEVICE_VERIFIED_EXISTING"
+    assert binding2.telegram_user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_same_user_different_device_rejected(db_session: AsyncSession):
+    """Case 3: Same user attempting verification from a SECOND device is rejected."""
+    user_id = 16001
+    fp_device_1 = {"device_id": "inst_phone_user_16001"}
+    fp_device_2 = {"device_id": "inst_laptop_user_16001"}
+
+    # 1. User registers on Device 1
+    s1, c1, _ = await DeviceService.verify_and_bind_device(db_session, user_id, fp_device_1)
+    await db_session.commit()
+    assert s1 is True
+
+    # 2. Same user tries to register from Device 2 -> Rejected
+    s2, c2, b2 = await DeviceService.verify_and_bind_device(db_session, user_id, fp_device_2)
+    await db_session.commit()
+    assert s2 is False
+    assert c2 == "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE"
+    assert b2.telegram_user_id == user_id
+
+
+@pytest.mark.asyncio
 async def test_same_device_different_user_blocked(db_session: AsyncSession):
     """Case 4: User B on previously verified device is blocked from binding."""
     user_a = 20001
     user_b = 20002
 
     fp = {
+        "device_id": "shared_device_id_20001",
         "screen": "1080x2400",
         "timezone": "Asia/Kolkata",
         "language": "hi-IN",
         "platform": "Android",
-        "hardware_concurrency": "8",
     }
 
     # 1. User A binds device
@@ -92,8 +134,8 @@ async def test_different_device_different_user_allowed(db_session: AsyncSession)
     user_a = 30001
     user_b = 30002
 
-    fp_a = {"screen": "1920x1080", "platform": "Linux"}
-    fp_b = {"screen": "2560x1440", "platform": "MacIntel"}
+    fp_a = {"device_id": "dev_30001_a"}
+    fp_b = {"device_id": "dev_30002_b"}
 
     s_a, _, _ = await DeviceService.verify_and_bind_device(db_session, user_a, fp_a)
     s_b, _, _ = await DeviceService.verify_and_bind_device(db_session, user_b, fp_b)
@@ -134,7 +176,7 @@ async def test_referral_reward_held_until_device_verified(db_session: AsyncSessi
     await DeviceService.verify_and_bind_device(
         db_session,
         friend.telegram_id,
-        {"screen": "1440x900", "platform": "MacIntel"},
+        {"device_id": "friend_dev_40002"},
     )
     await db_session.commit()
 
@@ -153,7 +195,7 @@ async def test_admin_device_release_and_rebind(db_session: AsyncSession):
     """Admin manually releases device binding, allowing legitimate re-binding."""
     user_a = 50001
     user_b = 50002
-    fp = {"screen": "1280x720", "platform": "Win32"}
+    fp = {"device_id": "released_dev_50001"}
 
     # User A binds device
     await DeviceService.verify_and_bind_device(db_session, user_a, fp)
@@ -182,10 +224,10 @@ async def test_webapp_init_data_hmac_validation():
     """Test cryptographic verification of Telegram WebApp initData string."""
     bot_token = "123456789:ABCDefGhIjKlMnOpQrStUvWxYz"
 
-    # Build genuine initData payload
+    # Build genuine initData payload with fresh timestamp
     user_payload = {"id": 60001, "first_name": "TestUser", "username": "testuser"}
     user_json = json.dumps(user_payload, separators=(",", ":"))
-    auth_date = "1700000000"
+    auth_date = str(int(time.time()))
     query_id = "AAHdF6IQAAAAAN0XohD34"
 
     data_pairs = [
@@ -217,6 +259,32 @@ async def test_webapp_init_data_hmac_validation():
 
 
 @pytest.mark.asyncio
+async def test_webapp_init_data_expiration():
+    """Test that stale/expired initData query string is rejected."""
+    bot_token = "123456789:ABCDefGhIjKlMnOpQrStUvWxYz"
+
+    # 48 hours old auth_date
+    expired_auth_date = str(int(time.time()) - 172800)
+    user_payload = {"id": 60002, "first_name": "OldUser"}
+    user_json = json.dumps(user_payload, separators=(",", ":"))
+
+    data_pairs = [
+        f"auth_date={expired_auth_date}",
+        f"user={user_json}",
+    ]
+    data_check_string = "\n".join(sorted(data_pairs))
+
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    correct_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    expired_init_data = f"auth_date={expired_auth_date}&user={urllib.parse.quote(user_json)}&hash={correct_hash}"
+
+    # Verify that validation fails due to expiration
+    res = validate_telegram_webapp_init_data(expired_init_data, bot_token, max_age_seconds=86400)
+    assert res is None
+
+
+@pytest.mark.asyncio
 async def test_privacy_preserving_fingerprint_hashing():
     """Verify that fingerprint hashing strips volatile fields and yields deterministic 64-char SHA-256."""
     fp_1 = {
@@ -224,20 +292,20 @@ async def test_privacy_preserving_fingerprint_hashing():
         "timezone": "Asia/Kolkata",
         "language": "en",
         "platform": "Win32",
-        "timestamp": "12345",  # volatile field
-        "ip": "1.2.3.4",        # volatile field
+        "timestamp": "12345",
+        "ip": "1.2.3.4",
     }
     fp_2 = {
         "screen": "1920x1080",
         "timezone": "Asia/Kolkata",
         "language": "en",
         "platform": "Win32",
-        "timestamp": "99999",  # different timestamp
-        "ip": "5.6.7.8",        # different IP
+        "timestamp": "99999",
+        "ip": "5.6.7.8",
     }
 
     hash_1 = hash_device_fingerprint(fp_1)
     hash_2 = hash_device_fingerprint(fp_2)
 
     assert len(hash_1) == 64
-    assert hash_1 == hash_2  # Stable despite different timestamps / IPs
+    assert hash_1 == hash_2

@@ -81,10 +81,16 @@ class DeviceService:
         user_existing = user_res.scalar_one_or_none()
 
         if user_existing:
-            # User already verified on another device; update last seen
-            user_existing.last_seen_at = now
-            await session.flush()
-            return True, "USER_ALREADY_VERIFIED", user_existing
+            if user_existing.fingerprint_hash != fp_hash:
+                logger.warning(
+                    f"Rejected verification: Telegram User {telegram_user_id} is already bound to device "
+                    f"{user_existing.fingerprint_hash[:8]}..., attempted from different device {fp_hash[:8]}..."
+                )
+                return False, "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE", user_existing
+            else:
+                user_existing.last_seen_at = now
+                await session.flush()
+                return True, "DEVICE_VERIFIED_EXISTING", user_existing
 
         # New device fingerprint + New user -> Create atomic binding
         new_binding = DeviceBinding(

@@ -97,8 +97,36 @@
       tg.expand();
     }
 
+    // Get or generate cryptographically random persistent device installation ID
+    function getOrCreateDeviceInstallationId() {
+      const STORAGE_KEY = "codesxpress_device_installation_id";
+      let deviceId = "";
+      try {
+        deviceId = localStorage.getItem(STORAGE_KEY) || "";
+      } catch (e) {
+        deviceId = "";
+      }
+
+      if (!deviceId || deviceId.length < 16) {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") {
+          deviceId = window.crypto.randomUUID();
+        } else if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+          const arr = new Uint8Array(16);
+          window.crypto.getRandomValues(arr);
+          deviceId = Array.from(arr, byte => byte.toString(16).padStart(2, '0')).join('');
+        } else {
+          deviceId = 'dev_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, deviceId);
+        } catch (e) {}
+      }
+      return deviceId;
+    }
+
     // Collect non-sensitive privacy-preserving browser fingerprint
     function generateBrowserFingerprint() {
+      const deviceId = getOrCreateDeviceInstallationId();
       const screenDetails = `${window.screen.width}x${window.screen.height}@${window.devicePixelRatio || 1}`;
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       const language = navigator.language || navigator.userLanguage || "en";
@@ -123,29 +151,14 @@
         canvasHash = "canvas_unavailable";
       }
 
-      // WebGL renderer info if accessible
-      let webglInfo = "";
-      try {
-        const glCanvas = document.createElement("canvas");
-        const gl = glCanvas.getContext("webgl") || glCanvas.getContext("experimental-webgl");
-        if (gl) {
-          const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-          if (debugInfo) {
-            webglInfo = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || "";
-          }
-        }
-      } catch (e) {
-        webglInfo = "gl_unavailable";
-      }
-
       return {
+        device_id: deviceId,
         screen: screenDetails,
         timezone: timeZone,
         language: language,
         platform: platform,
         hardware_concurrency: hardwareConcurrency,
         canvas: canvasHash,
-        webgl: webglInfo,
       };
     }
 
@@ -190,13 +203,20 @@
               tg.close();
             }
           }, 1200);
+        } else if (result.code === "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE") {
+          icon.innerText = "⚠️";
+          title.innerText = "Verification unavailable";
+          desc.innerText = "This Telegram account is already registered on another device.";
+          btn.style.display = "none";
+          status.className = "status-msg status-warning";
+          status.innerText = result.message || "Account already bound to another device.";
         } else if (result.code === "DEVICE_ALREADY_BOUND") {
           icon.innerText = "⚠️";
           title.innerText = "Verification unavailable";
-          desc.innerText = "This device has already been used.";
+          desc.innerText = "This device has already been used for referral verification.";
           btn.style.display = "none";
           status.className = "status-msg status-warning";
-          status.innerText = "Device already bound to another account.";
+          status.innerText = result.message || "Device already bound to another account.";
         } else {
           icon.innerText = "❌";
           title.innerText = "Verification failed";

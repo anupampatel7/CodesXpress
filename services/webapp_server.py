@@ -65,6 +65,18 @@ async def handle_post_verify_device(request: web.Request) -> web.Response:
                     "code": "DEVICE_ALREADY_BOUND",
                     "message": "This device has already been used for referral verification.",
                 }, status=403)
+            elif code == "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE":
+                return web.json_response({
+                    "success": False,
+                    "code": "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE",
+                    "message": "This Telegram account is already registered on another device.",
+                }, status=403)
+            elif code == "DEVICE_BLOCKED":
+                return web.json_response({
+                    "success": False,
+                    "code": "DEVICE_BLOCKED",
+                    "message": "This device is blocked due to suspected abuse.",
+                }, status=403)
             return web.json_response({
                 "success": False,
                 "code": code,
