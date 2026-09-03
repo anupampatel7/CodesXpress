@@ -112,22 +112,9 @@ async def main() -> None:
         logger.warning("=" * 60)
         return
 
-    # Initialize Bot with persistent connection pooling & Dispatcher
-    import aiohttp
-    from aiogram.client.session.aiohttp import AiohttpSession
-
-    tcp_connector = aiohttp.TCPConnector(
-        limit=100,
-        limit_per_host=30,
-        ttl_dns_cache=300,
-        enable_cleanup_closed=True,
-        keepalive_timeout=60.0,
-    )
-    http_session = AiohttpSession(connector=tcp_connector)
-
+    # Initialize Bot & Dispatcher
     bot = Bot(
         token=settings.BOT_TOKEN,
-        session=http_session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
