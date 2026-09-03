@@ -30,6 +30,11 @@ class DeviceService:
         if not telegram_user_id or not fingerprint_payload:
             return False, "INVALID_DATA", None
 
+        from config import settings
+        if settings.is_admin(telegram_user_id):
+            logger.info(f"Admin User #{telegram_user_id} is exempt from device binding.")
+            return True, "ADMIN_EXEMPT", None
+
         fp_hash = hash_device_fingerprint(fingerprint_payload)
         now = utc_now()
 
@@ -110,7 +115,11 @@ class DeviceService:
 
     @staticmethod
     async def is_device_verified(session: AsyncSession, telegram_user_id: int) -> bool:
-        """Check whether a Telegram user has an active device binding."""
+        """Check whether a Telegram user has an active device binding (Admins are always exempt)."""
+        from config import settings
+        if settings.is_admin(telegram_user_id):
+            return True
+
         stmt = select(DeviceBinding.id).where(
             DeviceBinding.telegram_user_id == telegram_user_id,
             DeviceBinding.status == DeviceBindingStatus.ACTIVE,

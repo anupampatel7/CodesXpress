@@ -570,3 +570,84 @@ async def test_webapp_server_push_on_verification_success(db_session: AsyncSessi
         assert ref_check2.points == 1  # Still exactly 1
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_device_verification_exemption(db_session: AsyncSession, mock_bot):
+    """Test that configured ADMIN_ID is 100% exempt from device verification and never blocked."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import Message, CallbackQuery, User as TgUser
+    from aiogram.filters import CommandObject
+    from aiogram.enums import ChatMemberStatus
+    from handlers.start import handle_start_command
+    from handlers.channels import handle_channel_verification
+
+    admin_tg_id = settings.ADMIN_ID or 999888
+    # Ensure admin_tg_id is recognized by settings
+    settings.ADMIN_ID = admin_tg_id
+
+    # 1. Non-admin user binds a device
+    non_admin_id = 77001
+    shared_fingerprint = {"device_id": "shared_hardware_id_123"}
+    ok, code, binding = await DeviceService.verify_and_bind_device(db_session, non_admin_id, shared_fingerprint)
+    assert ok is True
+    assert binding is not None
+    await db_session.commit()
+
+    # 2. Admin verification check: DeviceService.is_device_verified returns True immediately
+    assert await DeviceService.is_device_verified(db_session, admin_tg_id) is True
+
+    # 3. Admin calls verify_and_bind_device with the SAME device already bound to non-admin:
+    # Must succeed (ADMIN_EXEMPT) and NOT create any DeviceBinding for admin
+    ok_admin, code_admin, binding_admin = await DeviceService.verify_and_bind_device(
+        db_session,
+        admin_tg_id,
+        shared_fingerprint,
+    )
+    assert ok_admin is True
+    assert code_admin == "ADMIN_EXEMPT"
+    assert binding_admin is None
+
+    # Verify no DeviceBinding exists for admin in database
+    stmt = select(DeviceBinding).where(DeviceBinding.telegram_user_id == admin_tg_id)
+    admin_db_binding = (await db_session.execute(stmt)).scalar_one_or_none()
+    assert admin_db_binding is None
+
+    # 4. Admin starts bot (/start) -> enters directly without device prompt
+    for ch in ["@OfferRaider", "@OfferMate", "@Grabmint", "@offerelite"]:
+        await ChannelService.add_channel(db_session, admin_tg_id, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
+    await db_session.commit()
+
+    class MemberJoined:
+        status = ChatMemberStatus.MEMBER
+
+    mock_bot.get_chat_member.return_value = MemberJoined()
+
+    mock_msg = MagicMock(spec=Message)
+    mock_msg.from_user = MagicMock(spec=TgUser)
+    mock_msg.from_user.id = admin_tg_id
+    mock_msg.from_user.username = "AdminUser"
+    mock_msg.from_user.first_name = "SuperAdmin"
+    mock_msg.from_user.last_name = None
+    mock_msg.answer = AsyncMock()
+
+    cmd_obj = CommandObject(prefix="/", command="start", args=None)
+    await handle_start_command(mock_msg, cmd_obj, db_session, is_admin=True, bot=mock_bot)
+
+    mock_msg.answer.assert_called_once()
+    start_text = mock_msg.answer.call_args[0][0]
+    # Admin gets normal welcome menu, NOT device verification prompt
+    assert "Device Verification" not in start_text
+    start_kb = mock_msg.answer.call_args[1].get("reply_markup")
+    kb_texts = [b.text for row in start_kb.inline_keyboard for b in row]
+    assert any("Admin Panel" in b for b in kb_texts)
+
+    # 5. Non-admin user on second device is STILL blocked (anti-fraud intact)
+    another_user_id = 77002
+    ok_blocked, code_blocked, _ = await DeviceService.verify_and_bind_device(
+        db_session,
+        another_user_id,
+        shared_fingerprint,
+    )
+    assert ok_blocked is False
+    assert code_blocked == "DEVICE_ALREADY_BOUND"

@@ -65,8 +65,8 @@ async def handle_channel_verification(
         await safe_edit_message(callback, missing_text, reply_markup=channel_kb)
         return
 
-    # 2. Channels verified! Check if device verification is completed
-    is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
+    # 2. Channels verified! Check if device verification is completed (Admins are exempt)
+    is_device_ok = is_admin or await DeviceService.is_device_verified(session, from_user.id)
     if not is_device_ok:
         await callback.answer("✅ Channels verified! Please verify your device.", show_alert=False)
         device_text = (

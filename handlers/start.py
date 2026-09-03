@@ -74,8 +74,8 @@ async def handle_start_command(
         )
         return
 
-    # 2. Check device verification
-    is_device_ok = await DeviceService.is_device_verified(session, from_user.id)
+    # 2. Check device verification (Admins are always exempt)
+    is_device_ok = is_admin or await DeviceService.is_device_verified(session, from_user.id)
     if not is_device_ok:
         await message.answer(
             format_device_verification_prompt(),
