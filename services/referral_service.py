@@ -113,19 +113,23 @@ class ReferralService:
             f"Awarded {points_to_award} point(s) to Referrer #{referrer.telegram_id} for user #{user_id}"
         )
 
-        # Optional real-time notification to referrer
+        # Non-blocking real-time notification to referrer
         if bot and referrer.telegram_id:
-            try:
-                await bot.send_message(
-                    chat_id=referrer.telegram_id,
-                    text=(
-                        f"🎉 <b>Referral Verified!</b>\n\n"
-                        f"⭐ +{points_to_award} point added to your balance."
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception as e:
-                logger.warning(f"Could not send notification to referrer {referrer.telegram_id}: {e}")
+            async def _notify_referrer(tg_id: int, pts: int):
+                try:
+                    await bot.send_message(
+                        chat_id=tg_id,
+                        text=(
+                            f"🎉 <b>Referral Verified!</b>\n\n"
+                            f"⭐ +{pts} point added to your balance."
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not send notification to referrer {tg_id}: {e}")
+
+            import asyncio
+            asyncio.create_task(_notify_referrer(referrer.telegram_id, points_to_award))
 
         return True, referrer, points_to_award
 

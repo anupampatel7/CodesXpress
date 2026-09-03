@@ -1,5 +1,7 @@
+import asyncio
 import logging
-from typing import List, Tuple, Optional
+import time
+from typing import List, Tuple, Optional, Dict
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
 from aiogram.exceptions import TelegramAPIError
@@ -224,11 +226,14 @@ class ChannelService:
         user_telegram_id: int,
         cache: Optional[dict] = None,
     ) -> Tuple[bool, List[Channel]]:
-        """Verify that user is a member of all active required channels.
+        """Verify that user is a member of all active required channels concurrently.
 
         Returns:
             Tuple of (all_joined: bool, missing_channels: List[Channel])
         """
+        start_time = time.perf_counter()
+
+        # 1. Per-update dict cache check
         cache_key = f"_ch_ver_{user_telegram_id}"
         if cache is not None and cache_key in cache:
             return cache[cache_key]
@@ -240,14 +245,27 @@ class ChannelService:
                 cache[cache_key] = res
             return res
 
-        missing = []
-        for ch in required_channels:
-            is_member = await ChannelService.check_user_membership(bot, user_telegram_id, ch)
-            if not is_member:
-                missing.append(ch)
+        # 2. Concurrent verification of all channels using asyncio.gather
+        tasks = [
+            ChannelService.check_user_membership(bot, user_telegram_id, ch)
+            for ch in required_channels
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        res = (len(missing) == 0), missing
+        missing = []
+        for ch, is_member in zip(required_channels, results):
+            if is_member is True:
+                continue
+            missing.append(ch)
+
+        all_joined = (len(missing) == 0)
+        res = (all_joined, missing)
+
         if cache is not None:
             cache[cache_key] = res
-        return res
 
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"[PERF] Channel verification User #{user_telegram_id}: {elapsed_ms:.2f}ms (all_joined={all_joined})"
+        )
+        return res

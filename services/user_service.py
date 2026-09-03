@@ -241,4 +241,9 @@ class UserService:
         )
         session.add(audit)
         await session.flush()
+        try:
+            from middlewares.auth_middleware import invalidate_ban_cache
+            invalidate_ban_cache(user.telegram_id)
+        except Exception:
+            pass
         return True, f"User {'banned' if is_banned else 'unbanned'} successfully."

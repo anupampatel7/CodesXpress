@@ -1,12 +1,24 @@
 """Authentication and ban checking middleware."""
 
-from typing import Any, Awaitable, Callable, Dict, Optional
+import time
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery, Update, User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from config import settings
 from models.user import User
+
+# In-memory ban status cache (user_tg_id -> (expiry_monotonic, is_banned))
+_BAN_CACHE: Dict[int, Tuple[float, bool]] = {}
+
+
+def invalidate_ban_cache(user_tg_id: Optional[int] = None) -> None:
+    """Invalidate ban cache for a specific user or completely."""
+    if user_tg_id is not None:
+        _BAN_CACHE.pop(user_tg_id, None)
+    else:
+        _BAN_CACHE.clear()
 
 
 class AuthMiddleware(BaseMiddleware):
@@ -47,12 +59,19 @@ class AuthMiddleware(BaseMiddleware):
             is_admin = settings.is_admin(user_tg_id)
         data["is_admin"] = is_admin
 
-        # Check banned status from database if session is present
+        # Check banned status from cache / database if session is present
         session: Optional[AsyncSession] = data.get("session")
-        if session and user_tg_id is not None:
-            stmt = select(User.is_banned).where(User.telegram_id == user_tg_id)
-            res = await session.execute(stmt)
-            is_banned = res.scalar_one_or_none()
+        if session and user_tg_id is not None and not is_admin:
+            now = time.monotonic()
+            cached = _BAN_CACHE.get(user_tg_id)
+            if cached and now < cached[0]:
+                is_banned = cached[1]
+            else:
+                stmt = select(User.is_banned).where(User.telegram_id == user_tg_id)
+                res = await session.execute(stmt)
+                is_banned = res.scalar_one_or_none() or False
+                _BAN_CACHE[user_tg_id] = (now + 30.0, is_banned)
+
             if is_banned:
                 ban_msg = "🚫 <b>Account Suspended!</b>\n\nYour account has been suspended for terms violation."
                 if isinstance(event, Message):
