@@ -66,6 +66,12 @@ async def init_db() -> None:
     logger.info(f"Initializing database schema on {mask_database_url(settings.DATABASE_URL)}...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure display_order column exists on coupons table for persistent ordering
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE coupons ADD COLUMN display_order INTEGER DEFAULT 0"))
+        except Exception:
+            pass  # Column already exists or table freshly created
     logger.info("Database schema initialized successfully.")
 
 

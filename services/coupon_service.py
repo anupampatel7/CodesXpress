@@ -21,12 +21,57 @@ class CouponService:
     """Service handling coupon management and atomic redemption workflows."""
 
     @staticmethod
+    async def ensure_global_coupon_order(session: AsyncSession) -> None:
+        """Ensure all coupons have a persistent display_order.
+
+        If no coupons have display_order assigned yet (initial global setup),
+        randomizes all existing coupons exactly ONCE and assigns sequential orders (1, 2, 3...).
+        If some coupons already have display_order, assigns sequential orders (max + 1, max + 2...)
+        to any new unassigned coupons deterministically, preserving existing coupons' positions.
+        """
+        stmt = select(Coupon).order_by(Coupon.id.asc())
+        res = await session.execute(stmt)
+        all_coupons = list(res.scalars().all())
+        if not all_coupons:
+            return
+
+        assigned = [c for c in all_coupons if c.display_order and c.display_order > 0]
+        unassigned = [c for c in all_coupons if not c.display_order or c.display_order <= 0]
+
+        if not unassigned:
+            return
+
+        if not assigned:
+            # Case 1: First time global initialization.
+            # Randomize existing coupons exactly once globally.
+            import random
+            shuffled = list(unassigned)
+            random.shuffle(shuffled)
+            for idx, c in enumerate(shuffled, start=1):
+                c.display_order = idx
+        else:
+            # Case 2: Existing coupons already have permanent positions.
+            # Deterministically append unassigned coupons to the end.
+            current_max = max(c.display_order for c in assigned)
+            unassigned.sort(key=lambda c: (c.created_at or utc_now(), c.id or 0))
+            for idx, c in enumerate(unassigned, start=1):
+                c.display_order = current_max + idx
+
+        await session.flush()
+
+    @staticmethod
     async def get_available_coupons(
         session: AsyncSession,
         page: int = 1,
         per_page: int = 8,
     ) -> Tuple[List[Coupon], int, int]:
-        """Fetch all active, non-expired coupons (including out-of-stock) with pagination."""
+        """Fetch all active, non-expired coupons (including out-of-stock) with pagination in persistent global order."""
+        # Ensure any coupons missing display_order are assigned
+        check_stmt = select(Coupon.id).where(Coupon.display_order <= 0).limit(1)
+        res_check = await session.execute(check_stmt)
+        if res_check.scalar_one_or_none() is not None:
+            await CouponService.ensure_global_coupon_order(session)
+
         now = utc_now()
         filters = [
             Coupon.is_active == True,
@@ -42,7 +87,7 @@ class CouponService:
         query = (
             select(Coupon)
             .where(and_(*filters))
-            .order_by(Coupon.points_required.asc(), Coupon.id.desc())
+            .order_by(Coupon.display_order.asc(), Coupon.id.asc())
             .offset(offset)
             .limit(per_page)
         )
@@ -390,8 +435,14 @@ class CouponService:
         expiry_date: Optional[datetime] = None,
         image_url: Optional[str] = None,
         max_redemptions_per_user: int = 1,
+        display_order: Optional[int] = None,
     ) -> Coupon:
         """Create a new coupon entity."""
+        if display_order is None or display_order <= 0:
+            max_order_stmt = select(func.coalesce(func.max(Coupon.display_order), 0))
+            max_order = (await session.execute(max_order_stmt)).scalar() or 0
+            display_order = max_order + 1
+
         coupon = Coupon(
             title=title.strip(),
             brand=brand.strip(),
@@ -407,6 +458,7 @@ class CouponService:
             image_url=image_url.strip() if image_url else None,
             is_active=True,
             max_redemptions_per_user=max_redemptions_per_user,
+            display_order=display_order,
         )
         session.add(coupon)
         await session.flush()

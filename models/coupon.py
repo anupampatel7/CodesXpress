@@ -42,9 +42,11 @@ class Coupon(Base, TimestampMixin):
         CheckConstraint("stock >= 0", name="chk_coupon_stock_non_negative"),
         CheckConstraint("points_required >= 0", name="chk_coupon_points_non_negative"),
         Index("ix_coupons_is_active_category", "is_active", "category"),
+        Index("ix_coupons_display_order", "display_order"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     brand: Mapped[str] = mapped_column(String(64), nullable=False)

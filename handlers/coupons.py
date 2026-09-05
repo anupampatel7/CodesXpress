@@ -64,8 +64,11 @@ async def handle_coupons_menu(
         text = "🎁 <b>No Coupons Available</b>\n\nNew offers will appear here soon. 🚀"
         kb = get_no_brands_keyboard()
     else:
+        coupon_stocks = {}
+        for c in coupons:
+            coupon_stocks[c.id] = await StockService.get_authoritative_stock(session, c)
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
-        kb = get_available_coupons_keyboard(coupons=coupons, page=1, total_pages=total_pages)
+        kb = get_available_coupons_keyboard(coupons=coupons, page=1, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -86,8 +89,11 @@ async def handle_brand_pagination(
         text = "🎁 <b>No Coupons Available</b>\n\nNew offers will appear here soon. 🚀"
         kb = get_no_brands_keyboard()
     else:
+        coupon_stocks = {}
+        for c in coupons:
+            coupon_stocks[c.id] = await StockService.get_authoritative_stock(session, c)
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
-        kb = get_available_coupons_keyboard(coupons=coupons, page=page, total_pages=total_pages)
+        kb = get_available_coupons_keyboard(coupons=coupons, page=page, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
     await callback.answer()
     await safe_edit_message(callback, text, reply_markup=kb)

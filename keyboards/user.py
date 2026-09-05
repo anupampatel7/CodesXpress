@@ -1,6 +1,6 @@
 """Master Inline keyboards and callback data definitions for Codes Xpress 💎."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from urllib.parse import quote_plus
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
@@ -36,11 +36,12 @@ class CouponConfirmCallback(CallbackData, prefix="cconf"):
     page: int = 1
 
 
-class CouponRedeemCallback(CallbackData, prefix="credeem"):
+class CouponRedeemCallback(CallbackData, prefix="cred"):
     coupon_id: int
 
 
 class CouponNavCallback(CallbackData, prefix="cnav"):
+    action: str  # next, prev
     category: str
     page: int
 
@@ -55,7 +56,12 @@ class SupportReplyCallback(CallbackData, prefix="supreply"):
 
 # Legacy callback aliases
 class CategoryCallback(CallbackData, prefix="cat"):
-    name: str
+    category: str
+
+
+class AdminUserActionCallback(CallbackData, prefix="auact"):
+    action: str  # add_pts, rem_pts, ban, unban
+    user_id: int
 
 
 class AdminEditCouponCallback(CallbackData, prefix="aedit"):
@@ -78,7 +84,7 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """Create main menu inline keyboard."""
     buttons = [
         [
-            InlineKeyboardButton(text="🎁 Coupons", callback_data="menu_coupons"),
+            InlineKeyboardButton(text="🎁 Redeem", callback_data="menu_coupons"),
             InlineKeyboardButton(text="⭐ My Balance", callback_data="menu_balance"),
         ],
         [
@@ -153,12 +159,14 @@ def get_available_coupons_keyboard(
     coupons: List[Coupon],
     page: int,
     total_pages: int,
+    coupon_stocks: Optional[Dict[int, int]] = None,
 ) -> InlineKeyboardMarkup:
     """Create dynamic list of available coupon buttons with green/red stock indicator and number emoji points."""
     buttons = []
 
     for coupon in coupons:
-        indicator = "🟢" if coupon.stock > 0 else "🔴"
+        stock = coupon_stocks.get(coupon.id, coupon.stock) if coupon_stocks is not None else coupon.stock
+        indicator = "🟢" if stock > 0 else "🔴"
         pts_emoji = to_number_emoji(coupon.points_required)
         btn_text = f"{indicator} {coupon.title} : {pts_emoji}"
         buttons.append([

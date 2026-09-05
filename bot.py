@@ -104,6 +104,12 @@ async def main() -> None:
     await init_db()
     await seed_initial_channels()
 
+    # Ensure persistent global coupon ordering is established
+    async with async_session_factory() as startup_session:
+        from services.coupon_service import CouponService
+        await CouponService.ensure_global_coupon_order(startup_session)
+        await startup_session.commit()
+
     if is_placeholder:
         logger.warning("=" * 60)
         logger.warning("BOT_TOKEN is not set or contains the default placeholder.")

@@ -553,5 +553,234 @@ async def test_public_check_stock_flow(db_session: AsyncSession):
     assert "🟢 Active Store — 2 available" in overview_after
 
 
+@pytest.mark.asyncio
+async def test_main_menu_redeem_button_and_handler_mapping(db_session: AsyncSession):
+    """Verify Requirements A & B:
+    A. Non-admin main menu shows '🎁 Redeem' instead of '🎁 Coupons'.
+    B. Clicking Redeem still maps to 'menu_coupons' callback and triggers handle_coupons_menu.
+    """
+    from keyboards.user import get_main_menu_keyboard
+    from keyboards.admin import get_admin_main_keyboard
+    from handlers.coupons import handle_coupons_menu
+    from aiogram.types import CallbackQuery
+    from unittest.mock import MagicMock, AsyncMock
+
+    # Non-admin keyboard check
+    user_kb = get_main_menu_keyboard(is_admin=False)
+    btn_texts = [btn.text for row in user_kb.inline_keyboard for btn in row]
+    callbacks = [btn.callback_data for row in user_kb.inline_keyboard for btn in row]
+
+    assert "🎁 Redeem" in btn_texts
+    assert "🎁 Coupons" not in btn_texts
+    assert "menu_coupons" in callbacks
+
+    # Admin dashboard retains "🎁 Manage Coupons"
+    admin_main_kb = get_admin_main_keyboard()
+    admin_btn_texts = [btn.text for row in admin_main_kb.inline_keyboard for btn in row]
+    assert "🎁 Manage Coupons" in admin_btn_texts
+
+    # Verify callback handler execution
+    mock_cb = MagicMock(spec=CallbackQuery)
+    mock_cb.data = "menu_coupons"
+    mock_cb.from_user = MagicMock(id=112233, username="user1", first_name="User", last_name=None)
+    mock_cb.message = MagicMock()
+    mock_cb.message.edit_text = AsyncMock()
+    mock_cb.answer = AsyncMock()
+
+    await handle_coupons_menu(mock_cb, db_session)
+    mock_cb.answer.assert_called_once()
+    mock_cb.message.edit_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_permanent_global_coupon_ordering(db_session: AsyncSession):
+    """Verify Requirements C, D, E, F, G, H, I:
+    C. Coupon order is randomized only once globally.
+    D. The generated order is persisted in the database.
+    E. Multiple users receive the SAME order.
+    F. Reopening Redeem does NOT reshuffle.
+    G. Bot restart / new session does NOT change the order.
+    H. Existing coupons retain their positions when a new coupon is added.
+    I. New coupons are appended deterministically without reshuffling existing coupons.
+    """
+    # 1. Create 5 coupons with unassigned display_order (simulating initial database state)
+    coupon_names = ["Google Pay", "Flipkart", "Amazon", "Myntra", "BigBasket"]
+    created_coupons = []
+    for name in coupon_names:
+        c = Coupon(
+            title=name,
+            brand=name,
+            value="₹50",
+            points_required=5,
+            stock_type=StockType.QUANTITY,
+            stock=10,
+            display_order=0,
+        )
+        db_session.add(c)
+        created_coupons.append(c)
+    await db_session.commit()
+
+    # 2. First call to get_available_coupons triggers one-time global randomization
+    coupons_user_a, total, _ = await CouponService.get_available_coupons(db_session)
+    order_user_a = [c.title for c in coupons_user_a]
+    assert len(order_user_a) == 5
+    assert set(order_user_a) == set(coupon_names)
+
+    # 3. Verify display_order values are persisted in DB (1 through 5)
+    orders_in_db = [c.display_order for c in coupons_user_a]
+    assert orders_in_db == [1, 2, 3, 4, 5]
+
+    # 4. Requirement E: Another user queries coupons -> receives EXACT same sequence
+    coupons_user_b, _, _ = await CouponService.get_available_coupons(db_session)
+    order_user_b = [c.title for c in coupons_user_b]
+    assert order_user_b == order_user_a
+
+    # 5. Requirement F: Reopening Redeem does NOT reshuffle
+    coupons_reopen, _, _ = await CouponService.get_available_coupons(db_session)
+    order_reopen = [c.title for c in coupons_reopen]
+    assert order_reopen == order_user_a
+
+    # 6. Requirement G: Simulating restart with fresh query
+    await db_session.commit()
+    refreshed_coupons, _, _ = await CouponService.get_available_coupons(db_session)
+    order_refreshed = [c.title for c in refreshed_coupons]
+    assert order_refreshed == order_user_a
+
+    # 7. Requirements H & I: Add a new coupon later -> must be appended after existing coupons
+    new_coupon = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Zomato Pro",
+        brand="Zomato",
+        points_required=3,
+        stock_type=StockType.QUANTITY,
+        stock=5,
+    )
+    await db_session.commit()
+
+    # Verify existing positions 1..5 remain untouched and Zomato is at position 6
+    updated_coupons, new_total, _ = await CouponService.get_available_coupons(db_session)
+    assert new_total == 6
+    updated_order = [c.title for c in updated_coupons]
+    # First 5 items must match order_user_a exactly
+    assert updated_order[:5] == order_user_a
+    # 6th item must be the newly added coupon
+    assert updated_order[5] == "Zomato Pro"
+    assert new_coupon.display_order == 6
+
+
+@pytest.mark.asyncio
+async def test_zero_stock_coupons_visibility_and_safety(db_session: AsyncSession):
+    """Verify Requirements J, K, L, M, N:
+    J. Zero-stock coupons remain visible in Redeem list.
+    K. Zero-stock coupon shows 🔴.
+    L. Available-stock coupon shows 🟢.
+    M. Zero-stock status does not change coupon position.
+    N. Zero-stock coupon cannot be redeemed and existing out-of-stock handling remains intact.
+    """
+    from keyboards.user import get_available_coupons_keyboard
+    from handlers.coupons import handle_coupon_detail, handle_coupons_menu, CouponDetailCallback
+    from services.stock_service import StockService
+    from services.user_service import UserService
+    from aiogram.types import CallbackQuery
+    from unittest.mock import MagicMock, AsyncMock
+
+    # 1. Create coupons: Myntra (stock 5), BigBasket (stock 5), Amazon (stock 5)
+    c1 = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Myntra",
+        brand="Myntra",
+        points_required=5,
+        stock_type=StockType.QUANTITY,
+        stock=5,
+    )
+    c2 = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="BigBasket",
+        brand="BigBasket",
+        points_required=3,
+        stock_type=StockType.QUANTITY,
+        stock=5,
+    )
+    c3 = await CouponService.create_coupon(
+        session=db_session,
+        admin_id=999,
+        title="Amazon",
+        brand="Amazon",
+        points_required=10,
+        stock_type=StockType.QUANTITY,
+        stock=5,
+    )
+    await db_session.commit()
+
+    # Initial order with all stock > 0 (🟢)
+    coupons, total, _ = await CouponService.get_available_coupons(db_session)
+    assert total == 3
+    initial_titles = [c.title for c in coupons]
+
+    coupon_stocks = {c.id: await StockService.get_authoritative_stock(db_session, c) for c in coupons}
+    kb = get_available_coupons_keyboard(coupons, page=1, total_pages=1, coupon_stocks=coupon_stocks)
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any(f"🟢 {c1.title}" in b for b in btn_texts)
+    assert any(f"🟢 {c2.title}" in b for b in btn_texts)
+    assert any(f"🟢 {c3.title}" in b for b in btn_texts)
+
+    # 2. BigBasket stock drops to 0
+    c2.stock = 0
+    await db_session.commit()
+
+    # Re-query coupons list
+    coupons_after, total_after, _ = await CouponService.get_available_coupons(db_session)
+    assert total_after == 3
+    titles_after = [c.title for c in coupons_after]
+
+    # Requirement M: Position must NOT change
+    assert titles_after == initial_titles
+
+    # Requirements J, K, L: Zero-stock coupon remains visible with 🔴 while others have 🟢
+    coupon_stocks_after = {c.id: await StockService.get_authoritative_stock(db_session, c) for c in coupons_after}
+    kb_after = get_available_coupons_keyboard(coupons_after, page=1, total_pages=1, coupon_stocks=coupon_stocks_after)
+    btn_texts_after = [btn.text for row in kb_after.inline_keyboard for btn in row]
+
+    assert any(f"🟢 {c1.title}" in b for b in btn_texts_after)
+    assert any(f"🔴 {c2.title}" in b for b in btn_texts_after)
+    assert any(f"🟢 {c3.title}" in b for b in btn_texts_after)
+
+    # 3. Requirement N: Clicking zero-stock coupon shows out-of-stock message
+    user, _, _ = await UserService.get_or_create_user(db_session, 999888, first_name="Tester")
+    user.points = 100
+    await db_session.commit()
+
+    cb_zero = MagicMock(spec=CallbackQuery)
+    cb_zero.from_user = MagicMock(id=999888, username="tester", first_name="Tester", last_name=None)
+    cb_zero.message = MagicMock()
+    cb_zero.message.edit_text = AsyncMock()
+    cb_zero.answer = AsyncMock()
+
+    await handle_coupon_detail(
+        callback=cb_zero,
+        callback_data=CouponDetailCallback(coupon_id=c2.id, brand="BigBasket", page=1),
+        session=db_session,
+    )
+    cb_zero.message.edit_text.assert_called_once()
+    shown_text = cb_zero.message.edit_text.call_args[0][0]
+    assert "🔴 <b>Out of Stock</b>" in shown_text
+
+    # Redemption fails and does not deduct points
+    success, err_msg, redemption = await CouponService.redeem_coupon(
+        session=db_session,
+        user_id=user.id,
+        coupon_id=c2.id,
+    )
+    assert success is False
+    assert "out of stock" in err_msg.lower()
+    assert redemption is None
+    # User points unchanged
+    assert user.points == 100
+
+
+
 
 
