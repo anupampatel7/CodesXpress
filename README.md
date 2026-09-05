@@ -303,3 +303,5 @@ For local development:
 - **Zero Raw Secrets**: API tokens and private keys are loaded strictly via environment variables.
 - **Transaction Safety**: All mutations utilize isolated transactional boundaries preventing race conditions.
 - **Audit Logging**: Every point adjustment and restock action is permanently recorded.
+
+<!-- Deployment trigger: Render restart -->
