@@ -56,6 +56,7 @@ async def handle_channel_verification(
         bot=bot,
         session=session,
         user_telegram_id=from_user.id,
+        force_refresh=True,
     )
 
     if not all_joined and missing:

@@ -64,9 +64,7 @@ async def handle_coupons_menu(
         text = "🎁 <b>No Coupons Available</b>\n\nNew offers will appear here soon. 🚀"
         kb = get_no_brands_keyboard()
     else:
-        coupon_stocks = {}
-        for c in coupons:
-            coupon_stocks[c.id] = await StockService.get_authoritative_stock(session, c)
+        coupon_stocks = await StockService.get_authoritative_stocks_batch(session, coupons)
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=1, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
@@ -89,9 +87,7 @@ async def handle_brand_pagination(
         text = "🎁 <b>No Coupons Available</b>\n\nNew offers will appear here soon. 🚀"
         kb = get_no_brands_keyboard()
     else:
-        coupon_stocks = {}
-        for c in coupons:
-            coupon_stocks[c.id] = await StockService.get_authoritative_stock(session, c)
+        coupon_stocks = await StockService.get_authoritative_stocks_batch(session, coupons)
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=page, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
@@ -242,6 +238,7 @@ async def handle_coupon_redemption(
         bot=bot,
         session=session,
         user_telegram_id=from_user.id,
+        force_refresh=True,
     )
     if not all_joined and missing:
         await callback.answer("⚠️ Membership required in all channels to redeem.", show_alert=True)

@@ -128,19 +128,15 @@ class UserService:
     @staticmethod
     async def get_user_points_summary(session: AsyncSession, user_id: int) -> Dict[str, int]:
         """Compute aggregated points earned, spent, and referral count for a user."""
-        # Total points earned (positive transactions)
-        earned_stmt = select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
-            PointTransaction.user_id == user_id,
-            PointTransaction.amount > 0,
-        )
-        total_earned = (await session.execute(earned_stmt)).scalar() or 0
+        from sqlalchemy import case
 
-        # Total points spent (negative transactions)
-        spent_stmt = select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
-            PointTransaction.user_id == user_id,
-            PointTransaction.amount < 0,
-        )
-        total_spent_neg = (await session.execute(spent_stmt)).scalar() or 0
+        # Total points earned and spent in a single query
+        earned_spent_stmt = select(
+            func.coalesce(func.sum(case((PointTransaction.amount > 0, PointTransaction.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((PointTransaction.amount < 0, PointTransaction.amount), else_=0)), 0),
+        ).where(PointTransaction.user_id == user_id)
+        res_pts = await session.execute(earned_spent_stmt)
+        total_earned, total_spent_neg = res_pts.one()
         total_spent = abs(total_spent_neg)
 
         # Count successful referrals

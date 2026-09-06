@@ -16,6 +16,42 @@ class StockService:
     """Service handling stock calculations, manual restock, and bulk code imports."""
 
     @staticmethod
+    async def get_authoritative_stocks_batch(session: AsyncSession, coupons: List[Coupon]) -> Dict[int, int]:
+        """Calculate the true available stock for a batch of coupons in a single optimized query."""
+        if not coupons:
+            return {}
+
+        stocks: Dict[int, int] = {}
+        unique_code_coupons: List[Coupon] = []
+
+        for c in coupons:
+            if c.stock_type == StockType.UNIQUE_CODES:
+                unique_code_coupons.append(c)
+            else:
+                stocks[c.id] = max(0, c.stock)
+
+        if unique_code_coupons:
+            coupon_ids = [c.id for c in unique_code_coupons]
+            stmt = (
+                select(CouponCode.coupon_id, func.count(CouponCode.id))
+                .where(
+                    CouponCode.coupon_id.in_(coupon_ids),
+                    CouponCode.status == CodeStatus.AVAILABLE,
+                )
+                .group_by(CouponCode.coupon_id)
+            )
+            res = await session.execute(stmt)
+            counts = dict(res.all())
+
+            for c in unique_code_coupons:
+                count = counts.get(c.id, 0)
+                stocks[c.id] = count
+                if c.stock != count:
+                    c.stock = count
+
+        return stocks
+
+    @staticmethod
     async def get_authoritative_stock(session: AsyncSession, coupon: Coupon) -> int:
         """Calculate the true available stock based on the coupon inventory mode."""
         if coupon.stock_type == StockType.UNIQUE_CODES:
@@ -240,8 +276,5 @@ class StockService:
         res = await session.execute(stmt)
         coupons = list(res.scalars().all())
 
-        results = []
-        for c in coupons:
-            authoritative_stock = await StockService.get_authoritative_stock(session, c)
-            results.append((c, authoritative_stock))
-        return results
+        stocks = await StockService.get_authoritative_stocks_batch(session, coupons)
+        return [(c, stocks.get(c.id, 0)) for c in coupons]

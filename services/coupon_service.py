@@ -66,24 +66,13 @@ class CouponService:
         per_page: int = 8,
     ) -> Tuple[List[Coupon], int, int]:
         """Fetch all active, non-expired coupons (including out-of-stock) with pagination in persistent global order."""
-        # Ensure any coupons missing display_order are assigned
-        check_stmt = select(Coupon.id).where(Coupon.display_order <= 0).limit(1)
-        res_check = await session.execute(check_stmt)
-        if res_check.scalar_one_or_none() is not None:
-            await CouponService.ensure_global_coupon_order(session)
-
         now = utc_now()
         filters = [
             Coupon.is_active == True,
             or_(Coupon.expiry_date == None, Coupon.expiry_date > now),
         ]
 
-        count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
-        total_count = (await session.execute(count_stmt)).scalar() or 0
-
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
         offset = (page - 1) * per_page
-
         query = (
             select(Coupon)
             .where(and_(*filters))
@@ -93,6 +82,21 @@ class CouponService:
         )
         res = await session.execute(query)
         coupons = list(res.scalars().all())
+
+        # If any coupons lack display_order, ensure global ordering and re-query
+        if any(c.display_order <= 0 for c in coupons):
+            await CouponService.ensure_global_coupon_order(session)
+            res = await session.execute(query)
+            coupons = list(res.scalars().all())
+
+        # Fast path: on page 1 with fewer items than per_page, total_count is exact without extra COUNT query
+        if page == 1 and len(coupons) < per_page:
+            total_count = len(coupons)
+            total_pages = 1
+        else:
+            count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
+            total_count = (await session.execute(count_stmt)).scalar() or 0
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         return coupons, total_count, total_pages
 

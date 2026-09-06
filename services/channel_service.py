@@ -225,6 +225,7 @@ class ChannelService:
         session: AsyncSession,
         user_telegram_id: int,
         cache: Optional[dict] = None,
+        force_refresh: bool = False,
     ) -> Tuple[bool, List[Channel]]:
         """Verify that user is a member of all active required channels concurrently.
 
@@ -235,7 +236,7 @@ class ChannelService:
 
         # 1. Per-update dict cache check
         cache_key = f"_ch_ver_{user_telegram_id}"
-        if cache is not None and cache_key in cache:
+        if not force_refresh and cache is not None and cache_key in cache:
             return cache[cache_key]
 
         required_channels = await ChannelService.get_required_channels(session)

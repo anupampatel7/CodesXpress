@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Optional
 from pathlib import Path
 from aiohttp import web
 from config import settings, BASE_DIR
@@ -12,14 +13,17 @@ from utils.security import validate_telegram_webapp_init_data
 logger = logging.getLogger(__name__)
 
 WEBAPP_HTML_PATH = BASE_DIR / "webapp" / "index.html"
+_HTML_CACHE: Optional[str] = None
 
 
 async def handle_get_verify(request: web.Request) -> web.Response:
-    """Serve the WebApp HTML interface."""
-    if not WEBAPP_HTML_PATH.exists():
-        return web.Response(text="<h1>WebApp file not found.</h1>", status=404, content_type="text/html")
-    html_content = WEBAPP_HTML_PATH.read_text(encoding="utf-8")
-    return web.Response(text=html_content, content_type="text/html")
+    """Serve the WebApp HTML interface with in-memory caching."""
+    global _HTML_CACHE
+    if _HTML_CACHE is None:
+        if not WEBAPP_HTML_PATH.exists():
+            return web.Response(text="<h1>WebApp file not found.</h1>", status=404, content_type="text/html")
+        _HTML_CACHE = WEBAPP_HTML_PATH.read_text(encoding="utf-8")
+    return web.Response(text=_HTML_CACHE, content_type="text/html")
 
 
 async def handle_post_verify_device(request: web.Request) -> web.Response:
