@@ -53,33 +53,38 @@ class FraudService:
         from models.coupon import Coupon
         from models.redemption import Redemption
         from models.channel import Channel
+        from sqlalchemy import case
 
-        total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
-        banned_users = (await session.execute(select(func.count(User.id)).where(User.is_banned == True))).scalar() or 0
+        # 1. Users metrics (total, banned, active) in a single query
+        user_stmt = select(
+            func.count(User.id),
+            func.coalesce(func.sum(case((User.is_banned == True, 1), else_=0)), 0),
+        )
+        total_users, banned_users = (await session.execute(user_stmt)).one()
         active_users = max(0, total_users - banned_users)
 
-        total_referrals = (await session.execute(select(func.count(Referral.id)))).scalar() or 0
-        successful_referrals = (
-            await session.execute(
-                select(func.count(Referral.id)).where(Referral.status == ReferralStatus.SUCCESSFUL)
-            )
-        ).scalar() or 0
-        pending_referrals = (
-            await session.execute(
-                select(func.count(Referral.id)).where(Referral.status == ReferralStatus.PENDING)
-            )
-        ).scalar() or 0
+        # 2. Referrals metrics (total, successful, pending) in a single query
+        ref_stmt = select(
+            func.count(Referral.id),
+            func.coalesce(func.sum(case((Referral.status == ReferralStatus.SUCCESSFUL, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Referral.status == ReferralStatus.PENDING, 1), else_=0)), 0),
+        )
+        total_referrals, successful_referrals, pending_referrals = (await session.execute(ref_stmt)).one()
 
-        # Total points issued
+        # 3. Total points issued
         total_pts_stmt = select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
             PointTransaction.amount > 0
         )
         total_points_issued = (await session.execute(total_pts_stmt)).scalar() or 0
 
-        active_coupons = (
-            await session.execute(select(func.count(Coupon.id)).where(Coupon.is_active == True))
-        ).scalar() or 0
-        total_stock = (await session.execute(select(func.coalesce(func.sum(Coupon.stock), 0)))).scalar() or 0
+        # 4. Coupons metrics (active_coupons, total_stock) in a single query
+        coupon_stmt = select(
+            func.coalesce(func.sum(case((Coupon.is_active == True, 1), else_=0)), 0),
+            func.coalesce(func.sum(Coupon.stock), 0),
+        )
+        active_coupons, total_stock = (await session.execute(coupon_stmt)).one()
+
+        # 5. Redemptions and channels
         total_redemptions = (await session.execute(select(func.count(Redemption.id)))).scalar() or 0
         required_channels = (
             await session.execute(select(func.count(Channel.id)).where(Channel.is_active == True))

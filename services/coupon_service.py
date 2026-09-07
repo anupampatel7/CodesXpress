@@ -144,10 +144,6 @@ class CouponService:
             Coupon.stock > 0,
         ]
 
-        count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
-        total_count = (await session.execute(count_stmt)).scalar() or 0
-
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
         offset = (page - 1) * per_page
 
         query = (
@@ -159,6 +155,14 @@ class CouponService:
         )
         res = await session.execute(query)
         coupons = list(res.scalars().all())
+
+        if page == 1 and len(coupons) < per_page:
+            total_count = len(coupons)
+            total_pages = 1
+        else:
+            count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
+            total_count = (await session.execute(count_stmt)).scalar() or 0
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         return coupons, total_count, total_pages
 
@@ -179,11 +183,6 @@ class CouponService:
         if category and category != "ALL":
             filters.append(Coupon.category == category)
 
-        # Count total
-        count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
-        total_count = (await session.execute(count_stmt)).scalar() or 0
-
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
         offset = (page - 1) * per_page
 
         # Fetch page items
@@ -197,6 +196,14 @@ class CouponService:
         res = await session.execute(query)
         coupons = list(res.scalars().all())
 
+        if page == 1 and len(coupons) < per_page:
+            total_count = len(coupons)
+            total_pages = 1
+        else:
+            count_stmt = select(func.count(Coupon.id)).where(and_(*filters))
+            total_count = (await session.execute(count_stmt)).scalar() or 0
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
+
         return coupons, total_count, total_pages
 
     @staticmethod
@@ -206,10 +213,6 @@ class CouponService:
         per_page: int = 8,
     ) -> Tuple[List[Coupon], int, int]:
         """Fetch all coupons including inactive/expired for admin panel."""
-        count_stmt = select(func.count(Coupon.id))
-        total_count = (await session.execute(count_stmt)).scalar() or 0
-
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
         offset = (page - 1) * per_page
 
         query = (
@@ -220,6 +223,14 @@ class CouponService:
         )
         res = await session.execute(query)
         coupons = list(res.scalars().all())
+
+        if page == 1 and len(coupons) < per_page:
+            total_count = len(coupons)
+            total_pages = 1
+        else:
+            count_stmt = select(func.count(Coupon.id))
+            total_count = (await session.execute(count_stmt)).scalar() or 0
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         return coupons, total_count, total_pages
 

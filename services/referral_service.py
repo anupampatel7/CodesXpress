@@ -29,9 +29,11 @@ class ReferralService:
         Returns:
             Tuple of (reward_awarded: bool, referrer: Optional[User], points_awarded: int)
         """
-        # Find pending referral record for this referred user
+        from sqlalchemy.orm import selectinload
+        # Find pending referral record for this referred user with eager loaded relationships
         stmt = (
             select(Referral)
+            .options(selectinload(Referral.referred_user), selectinload(Referral.referrer))
             .where(
                 Referral.referred_id == user_id,
                 Referral.status == ReferralStatus.PENDING,
@@ -45,11 +47,7 @@ class ReferralService:
             # No pending referral to reward
             return False, None, 0
 
-        # Fetch referred user to verify device binding
-        ref_by_stmt = select(User).where(User.id == user_id)
-        ref_by_res = await session.execute(ref_by_stmt)
-        referred_user = ref_by_res.scalar_one_or_none()
-
+        referred_user = referral.referred_user
         if not referred_user:
             return False, None, 0
 
@@ -74,21 +72,17 @@ class ReferralService:
                 return False, None, 0
 
         referrer_id = referral.referrer_id
+        referrer = referral.referrer
+        if not referrer:
+            logger.warning(f"Referrer #{referrer_id} not found when fulfilling referral #{referral.id}")
+            await session.flush()
+            return False, None, 0
+
         points_to_award = settings.POINTS_PER_REFERRAL
 
         # Atomically mark referral as successful
         referral.status = ReferralStatus.SUCCESSFUL
         referral.reward_given = True
-
-        # Fetch and credit referrer
-        ref_user_stmt = select(User).where(User.id == referrer_id)
-        ref_user_res = await session.execute(ref_user_stmt)
-        referrer = ref_user_res.scalar_one_or_none()
-
-        if not referrer:
-            logger.warning(f"Referrer #{referrer_id} not found when fulfilling referral #{referral.id}")
-            await session.flush()
-            return False, None, 0
 
         # Increment referrer points atomically
         update_stmt = (
