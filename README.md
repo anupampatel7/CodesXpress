@@ -260,18 +260,26 @@ For local development:
 
 ---
 
-### Deploying to Render
+### Deploying to Render (Web Service)
 
 1. Log in to [Render.com](https://render.com).
-2. Click **"New"** -> **"Background Worker"** (or **Web Service** with Docker runtime).
-3. Connect your GitHub repository.
-4. Select **Docker** as the Environment.
+2. Click **"New"** -> **"Web Service"** (or use the Blueprint from `render.yaml`).
+3. Connect your GitHub repository (`anupampatel7/CodesXpress`).
+4. Configure service settings:
+   - **Environment / Runtime**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python bot.py`
+   - **Health Check Path**: `/health`
 5. Under **Environment Variables**, set:
-   - `BOT_TOKEN`
-   - `ADMIN_ID`
-   - `BOT_USERNAME`
-6. If using SQLite, attach a **Persistent Disk** mounted at `/app/data`.
-7. Click **Deploy**.
+   - `BOT_TOKEN`: Your Telegram Bot API token
+   - `ADMIN_ID`: Your Telegram numeric user ID
+   - `BOT_USERNAME`: `CodesXpress_bot` (or your bot's username without `@`)
+   - `DATABASE_URL`: PostgreSQL connection string (e.g. Supabase or Render PostgreSQL: `postgresql+asyncpg://...`)
+   - `WEBAPP_URL`: `https://codesxpress377.onrender.com`
+   - `WEBAPP_HOST`: `0.0.0.0`
+   - `WEBAPP_PORT`: `8080` (Render will also automatically provide `$PORT`)
+6. Click **Deploy**.
+7. The bot will automatically start polling Telegram and listen for Render health checks at `https://codesxpress377.onrender.com/health`.
 
 ---
 
