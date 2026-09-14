@@ -22,7 +22,7 @@ services:
       - key: CHANNEL_2
         value: "@OfferMate"
       - key: CHANNEL_3
-        value: "@Grabmint"
+        value: "@MULTI_purpose_with_me_sale"
       - key: CHANNEL_4
         value: "@offerelite"
       - key: WEBAPP_URL

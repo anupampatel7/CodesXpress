@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         description="Second required Telegram channel for referral verification",
     )
     CHANNEL_3: Optional[str] = Field(
-        default="@Grabmint",
+        default="@MULTI_purpose_with_me_sale",
         description="Third required Telegram channel for referral verification",
     )
     CHANNEL_4: Optional[str] = Field(
@@ -139,6 +139,7 @@ class Settings(BaseSettings):
         default=10000,
         description="Fallback port",
     )
+    
 
     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     LOG_LEVEL: str = Field(
