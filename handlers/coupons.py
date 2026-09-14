@@ -58,6 +58,9 @@ async def handle_coupons_menu(
     session: AsyncSession,
 ) -> None:
     """Display available coupons dynamically based on in-stock inventory."""
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
     coupons, total_count, total_pages = await CouponService.get_available_coupons(session, page=1, per_page=8)
 
     if not coupons:
@@ -68,8 +71,6 @@ async def handle_coupons_menu(
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=1, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
-    if isinstance(event, CallbackQuery):
-        await event.answer()
     await safe_edit_message(event, text, reply_markup=kb)
 
 
@@ -80,6 +81,7 @@ async def handle_brand_pagination(
     session: AsyncSession,
 ) -> None:
     """Paginate through available coupons."""
+    await callback.answer()
     page = max(1, callback_data.page)
     coupons, total_count, total_pages = await CouponService.get_available_coupons(session, page=page, per_page=8)
 
@@ -91,7 +93,6 @@ async def handle_brand_pagination(
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=page, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
-    await callback.answer()
     await safe_edit_message(callback, text, reply_markup=kb)
 
 
@@ -106,12 +107,13 @@ async def handle_check_stock(
     session: AsyncSession,
 ) -> None:
     """Display real-time public coupon stock inventory."""
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
     coupon_stocks = await StockService.get_all_active_coupons_stock(session)
     text = format_coupon_stock_overview(coupon_stocks)
     kb = get_check_stock_keyboard()
 
-    if isinstance(event, CallbackQuery):
-        await event.answer()
     await safe_edit_message(event, text, reply_markup=kb)
 
 

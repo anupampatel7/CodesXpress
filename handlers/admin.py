@@ -133,6 +133,8 @@ async def handle_admin_dashboard(
     state: FSMContext,
 ) -> None:
     """Show admin panel dashboard with platform statistics."""
+    if isinstance(event, CallbackQuery):
+        await event.answer()
     if not await require_admin(event, is_admin):
         return
     await state.clear()
@@ -148,7 +150,6 @@ async def handle_admin_dashboard(
             await event.message.edit_text(dash_text, reply_markup=kb, parse_mode="HTML")
         except Exception:
             await event.message.answer(dash_text, reply_markup=kb, parse_mode="HTML")
-        await event.answer()
 
 
 @router.callback_query(F.data == "admin_cancel_fsm")
@@ -159,8 +160,8 @@ async def handle_cancel_fsm(
     is_admin: bool,
 ) -> None:
     """Cancel current multi-step admin wizard."""
-    await state.clear()
     await callback.answer("Operation cancelled.")
+    await state.clear()
     metrics = await FraudService.get_system_metrics(session)
     dash_text = "❌ <b>Operation Cancelled.</b>\n\n" + format_admin_dashboard(metrics)
     kb = get_admin_main_keyboard()
@@ -182,6 +183,7 @@ async def handle_admin_coupons_list(
     is_admin: bool,
 ) -> None:
     """List all coupons for admin."""
+    await callback.answer()
     if not await require_admin(callback, is_admin):
         return
     page = max(1, callback_data.page)
@@ -194,7 +196,6 @@ async def handle_admin_coupons_list(
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
-    await callback.answer()
 
 
 @router.callback_query(AdminCouponCallback.filter(F.action == "view"))

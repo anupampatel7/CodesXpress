@@ -28,6 +28,7 @@ async def handle_menu_home(
     is_admin: bool,
 ) -> None:
     """Return to main menu."""
+    await callback.answer()
     from_user = callback.from_user
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if not user:
@@ -42,7 +43,6 @@ async def handle_menu_home(
     welcome_text = format_user_welcome(user, settings.BOT_USERNAME)
     menu_kb = get_main_menu_keyboard(is_admin=is_admin)
 
-    await callback.answer()
     await safe_edit_message(callback, welcome_text, reply_markup=menu_kb)
 
 
@@ -50,10 +50,10 @@ async def handle_menu_home(
 @router.callback_query(F.data == "menu_help")
 async def handle_help(event: Message | CallbackQuery) -> None:
     """Show help and guide message."""
-    text = format_help_message()
-    kb = get_back_to_menu_keyboard()
     if isinstance(event, CallbackQuery):
         await event.answer()
+    text = format_help_message()
+    kb = get_back_to_menu_keyboard()
     await safe_edit_message(event, text, reply_markup=kb)
 
 

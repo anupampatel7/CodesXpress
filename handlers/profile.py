@@ -35,6 +35,9 @@ async def handle_balance(
     session: AsyncSession,
 ) -> None:
     """Display short, clean user balance and summary."""
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
     from_user = event.from_user
     if not from_user:
         return
@@ -57,8 +60,6 @@ async def handle_balance(
     )
     kb = get_balance_keyboard()
 
-    if isinstance(event, CallbackQuery):
-        await event.answer()
     await safe_edit_message(event, msg_text, reply_markup=kb)
 
 
@@ -73,6 +74,9 @@ async def handle_my_coupons(
     session: AsyncSession,
 ) -> None:
     """Display list of coupons redeemed by the user directly."""
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
     from_user = event.from_user
     if not from_user:
         return
@@ -114,8 +118,6 @@ async def handle_my_coupons(
             )
         text = "\n".join(text_lines)
 
-    if isinstance(event, CallbackQuery):
-        await event.answer()
     await safe_edit_message(event, text, reply_markup=kb)
 
 
