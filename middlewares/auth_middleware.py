@@ -70,7 +70,7 @@ class AuthMiddleware(BaseMiddleware):
                 stmt = select(User.is_banned).where(User.telegram_id == user_tg_id)
                 res = await session.execute(stmt)
                 is_banned = res.scalar_one_or_none() or False
-                _BAN_CACHE[user_tg_id] = (now + 30.0, is_banned)
+                _BAN_CACHE[user_tg_id] = (now + 120.0, is_banned)
 
             if is_banned:
                 ban_msg = "🚫 <b>Account Suspended!</b>\n\nYour account has been suspended for terms violation."

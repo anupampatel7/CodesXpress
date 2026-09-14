@@ -8,7 +8,21 @@ from models.base import utc_now
 from models.device_binding import DeviceBinding, DeviceBindingStatus
 from utils.security import hash_device_fingerprint
 
+import time
+
 logger = logging.getLogger(__name__)
+
+# In-memory device verification positive cache: (telegram_user_id -> expiry_monotonic)
+_DEVICE_VERIFIED_CACHE: Dict[int, float] = {}
+_DEVICE_VERIFIED_TTL = 120.0  # 2 minutes
+
+
+def invalidate_device_cache(telegram_user_id: Optional[int] = None) -> None:
+    """Invalidate device verification cache for a user or globally."""
+    if telegram_user_id is not None:
+        _DEVICE_VERIFIED_CACHE.pop(telegram_user_id, None)
+    else:
+        _DEVICE_VERIFIED_CACHE.clear()
 
 
 class DeviceService:
@@ -27,6 +41,7 @@ class DeviceService:
         Returns:
             Tuple of (success: bool, code_or_message: str, binding: Optional[DeviceBinding])
         """
+        invalidate_device_cache(telegram_user_id)
         if not telegram_user_id or not fingerprint_payload:
             return False, "INVALID_DATA", None
 
@@ -55,6 +70,7 @@ class DeviceService:
                     if ip_address:
                         existing_binding.ip_address = ip_address
                     await session.flush()
+                    _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
                     return True, "DEVICE_VERIFIED_EXISTING", existing_binding
                 else:
                     # Device already claimed by another Telegram ID -> REJECT
@@ -74,6 +90,7 @@ class DeviceService:
                 if ip_address:
                     existing_binding.ip_address = ip_address
                 await session.flush()
+                _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
                 logger.info(f"Rebound released device {fp_hash[:8]}... to User {telegram_user_id}")
                 return True, "DEVICE_REBOUND", existing_binding
 
@@ -95,6 +112,7 @@ class DeviceService:
             else:
                 user_existing.last_seen_at = now
                 await session.flush()
+                _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
                 return True, "DEVICE_VERIFIED_EXISTING", user_existing
 
         # New device fingerprint + New user -> Create atomic binding
@@ -110,6 +128,7 @@ class DeviceService:
         )
         session.add(new_binding)
         await session.flush()
+        _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
         logger.info(f"Successfully bound new device {fp_hash[:8]}... to User {telegram_user_id}")
         return True, "DEVICE_BOUND_NEW", new_binding
 
@@ -171,6 +190,7 @@ class DeviceService:
         binding.status = DeviceBindingStatus.RELEASED
         binding.last_seen_at = utc_now()
         await session.flush()
+        invalidate_device_cache(telegram_user_id)
         logger.info(f"Admin #{admin_id} released device binding for User #{telegram_user_id}")
         return True, "Device binding successfully released."
 
@@ -192,5 +212,6 @@ class DeviceService:
 
         binding.status = DeviceBindingStatus.BLOCKED
         await session.flush()
+        invalidate_device_cache(telegram_user_id)
         logger.info(f"Admin #{admin_id} blocked device binding for User #{telegram_user_id}")
         return True, "Device binding successfully blocked."

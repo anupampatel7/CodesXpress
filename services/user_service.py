@@ -127,8 +127,23 @@ class UserService:
 
     @staticmethod
     async def get_user_points_summary(session: AsyncSession, user_id: int) -> Dict[str, int]:
-        """Compute aggregated points earned, spent, and referral count for a user."""
+        """Compute aggregated points earned, spent, referral count, and redemptions for a user."""
         from sqlalchemy import case
+        from models.redemption import Redemption, RedemptionStatus
+
+        # Count successful referrals
+        ref_stmt = select(func.count(Referral.id)).where(
+            Referral.referrer_id == user_id,
+            Referral.status == ReferralStatus.SUCCESSFUL,
+        )
+        successful_refs = (await session.execute(ref_stmt)).scalar() or 0
+
+        # Count successful redemptions
+        red_stmt = select(func.count(Redemption.id)).where(
+            Redemption.user_id == user_id,
+            Redemption.status == RedemptionStatus.SUCCESS,
+        )
+        total_redemptions = (await session.execute(red_stmt)).scalar() or 0
 
         # Total points earned and spent in a single query
         earned_spent_stmt = select(
@@ -139,17 +154,11 @@ class UserService:
         total_earned, total_spent_neg = res_pts.one()
         total_spent = abs(total_spent_neg)
 
-        # Count successful referrals
-        ref_stmt = select(func.count(Referral.id)).where(
-            Referral.referrer_id == user_id,
-            Referral.status == ReferralStatus.SUCCESSFUL,
-        )
-        successful_refs = (await session.execute(ref_stmt)).scalar() or 0
-
         return {
             "total_earned": total_earned,
             "total_spent": total_spent,
             "successful_referrals": successful_refs,
+            "total_redemptions": total_redemptions,
         }
 
     @staticmethod

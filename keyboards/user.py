@@ -77,12 +77,12 @@ class AdminViewCodesCallback(CallbackData, prefix="avcodes"):
 
 
 # =========================================================================
-# USER KEYBOARDS
+# =========================================================================
+# USER KEYBOARDS (SINGLETONS FOR STATIC MENUS)
 # =========================================================================
 
-def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Create main menu inline keyboard."""
-    buttons = [
+_MAIN_MENU_USER_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
         [
             InlineKeyboardButton(text="🎁 Redeem", callback_data="menu_coupons"),
             InlineKeyboardButton(text="⭐ My Balance", callback_data="menu_balance"),
@@ -96,42 +96,126 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),
         ],
     ]
+)
 
-    if is_admin:
-        buttons.append([
-            InlineKeyboardButton(text="👑 Admin Panel", callback_data="admin_dashboard")
-        ])
+_MAIN_MENU_ADMIN_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎁 Redeem", callback_data="menu_coupons"),
+            InlineKeyboardButton(text="⭐ My Balance", callback_data="menu_balance"),
+        ],
+        [
+            InlineKeyboardButton(text="🔗 Refer & Earn", callback_data="menu_refer"),
+            InlineKeyboardButton(text="🎟️ My Coupons", callback_data="menu_my_coupons"),
+        ],
+        [
+            InlineKeyboardButton(text="📦 Check Stock", callback_data="menu_check_stock"),
+            InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),
+        ],
+        [
+            InlineKeyboardButton(text="👑 Admin Panel", callback_data="admin_dashboard"),
+        ],
+    ]
+)
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+_CHECK_STOCK_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Back", callback_data="menu_home")],
+    ]
+)
+
+_BALANCE_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 Refer & Earn", callback_data="menu_refer")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
+    ]
+)
+
+_INSUFFICIENT_POINTS_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 Refer & Earn", callback_data="menu_refer")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
+    ]
+)
+
+_NO_BRANDS_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Refresh", callback_data="menu_coupons")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
+    ]
+)
+
+_BACK_TO_MENU_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")]
+    ]
+)
+
+_DEVICE_BLOCKED_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),
+            InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home"),
+        ]
+    ]
+)
+
+_SUPPORT_CANCEL_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="↩️ Cancel", callback_data="support_cancel")]
+    ]
+)
+
+_ADMIN_SUPPORT_CANCEL_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="↩️ Cancel", callback_data="admin_support_cancel")]
+    ]
+)
+
+
+def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
+    """Return main menu inline keyboard singleton."""
+    return _MAIN_MENU_ADMIN_KB if is_admin else _MAIN_MENU_USER_KB
 
 
 def get_check_stock_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard for stock check view."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Back", callback_data="menu_home")],
-        ]
-    )
+    """Return keyboard for stock check view singleton."""
+    return _CHECK_STOCK_KB
 
 
 def get_balance_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard for My Balance view."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Refer & Earn", callback_data="menu_refer")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
-        ]
-    )
+    """Return keyboard for My Balance view singleton."""
+    return _BALANCE_KB
 
 
 def get_insufficient_points_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard when user lacks enough points to redeem."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Refer & Earn", callback_data="menu_refer")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
-        ]
-    )
+    """Return keyboard when user lacks enough points to redeem singleton."""
+    return _INSUFFICIENT_POINTS_KB
+
+
+def get_no_brands_keyboard() -> InlineKeyboardMarkup:
+    """Return keyboard when no active brands/coupons exist singleton."""
+    return _NO_BRANDS_KB
+
+
+def get_back_to_menu_keyboard() -> InlineKeyboardMarkup:
+    """Return standard back to menu keyboard singleton."""
+    return _BACK_TO_MENU_KB
+
+
+def get_device_blocked_keyboard() -> InlineKeyboardMarkup:
+    """Return keyboard when device is already bound / blocked singleton."""
+    return _DEVICE_BLOCKED_KB
+
+
+def get_support_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Return cancel button for support prompt singleton."""
+    return _SUPPORT_CANCEL_KB
+
+
+def get_admin_reply_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Return cancel button for admin replying to support singleton."""
+    return _ADMIN_SUPPORT_CANCEL_KB
 
 
 DIGIT_EMOJI_MAP = {
@@ -208,16 +292,6 @@ def get_available_coupons_keyboard(
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_no_brands_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard when no active brands/coupons exist."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Refresh", callback_data="menu_coupons")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
-        ]
-    )
 
 
 def get_coupon_detail_keyboard(
@@ -309,18 +383,6 @@ def get_device_verification_keyboard(webapp_url: Optional[str] = None) -> Inline
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_device_blocked_keyboard() -> InlineKeyboardMarkup:
-    """Create keyboard when device is already bound / blocked."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🆘 Support", callback_data="menu_support"),
-                InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home"),
-            ]
-        ]
-    )
-
-
 def get_share_referral_keyboard(bot_username: str, referral_code: str) -> InlineKeyboardMarkup:
     """Create referral share buttons."""
     referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}"
@@ -356,38 +418,11 @@ def get_my_coupons_keyboard(redemptions: List[Redemption]) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_back_to_menu_keyboard() -> InlineKeyboardMarkup:
-    """Standard back to menu keyboard."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")]
-        ]
-    )
-
-
-def get_support_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Create cancel button for support prompt."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ Cancel", callback_data="support_cancel")]
-        ]
-    )
-
-
 def get_support_admin_keyboard(user_tg_id: int) -> InlineKeyboardMarkup:
     """Create Reply button for admin on support request."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="↩️ Reply", callback_data=SupportReplyCallback(user_tg_id=user_tg_id).pack())]
-        ]
-    )
-
-
-def get_admin_reply_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Create Cancel button for admin replying to support."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ Cancel", callback_data="admin_support_cancel")]
         ]
     )
 

@@ -15,6 +15,10 @@ from utils.formatting import format_channel_diagnostic_error
 logger = logging.getLogger(__name__)
 
 
+# Normalized chat_id cache
+_NORMALIZED_CHAT_ID_CACHE: Dict[str, str | int] = {}
+
+
 class ChannelService:
     """Service for managing required channels and verifying user membership."""
 
@@ -123,13 +127,19 @@ class ChannelService:
 
     @staticmethod
     def normalize_chat_id(channel_id: str) -> str | int:
-        """Normalize channel ID string into Telegram Chat ID parameter."""
+        """Normalize channel ID string into Telegram Chat ID parameter (cached)."""
+        cached = _NORMALIZED_CHAT_ID_CACHE.get(channel_id)
+        if cached is not None:
+            return cached
         clean = channel_id.strip()
         if clean.startswith("-100") or (clean.startswith("-") and clean[1:].isdigit()) or clean.isdigit():
-            return int(clean)
+            val = int(clean)
         elif not clean.startswith("@"):
-            return f"@{clean}"
-        return clean
+            val = f"@{clean}"
+        else:
+            val = clean
+        _NORMALIZED_CHAT_ID_CACHE[channel_id] = val
+        return val
 
     @staticmethod
     async def diagnose_channel_setup(
@@ -177,13 +187,15 @@ class ChannelService:
                 ChatMemberStatus.MEMBER,
                 ChatMemberStatus.ADMINISTRATOR,
                 ChatMemberStatus.CREATOR,
+                "member",
+                "administrator",
+                "creator",
             }
 
-            if member.status in valid_direct_statuses:
+            if member.status in valid_direct_statuses or (
+                getattr(member, "status", None) == ChatMemberStatus.RESTRICTED and bool(getattr(member, "is_member", False))
+            ):
                 return True
-
-            if member.status == ChatMemberStatus.RESTRICTED:
-                return bool(getattr(member, "is_member", False))
 
             return False
         except TelegramAPIError as e:
@@ -191,7 +203,6 @@ class ChannelService:
             logger.warning(
                 f"Telegram API check failed for user {user_telegram_id} on channel {channel.channel_id}: {err_text}"
             )
-            # Check if this error indicates bot permission / chat misconfiguration
             setup_error_markers = [
                 "chat not found",
                 "not enough rights",
@@ -204,7 +215,6 @@ class ChannelService:
             if any(marker in err_text.lower() for marker in setup_error_markers):
                 diag_msg = format_channel_diagnostic_error(channel.channel_id, err_text)
                 logger.error(f"⚠️ Channel verification setup problem detected:\n{diag_msg}")
-                # Notify configured super admin if available
                 if settings.ADMIN_ID and settings.ADMIN_ID != 0 and bot:
                     try:
                         await bot.send_message(

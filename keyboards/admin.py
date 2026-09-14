@@ -34,9 +34,8 @@ class AdminNavCallback(CallbackData, prefix="anav"):
     page: int = 1
 
 
-def get_admin_main_keyboard() -> InlineKeyboardMarkup:
-    """Create admin dashboard main menu keyboard."""
-    buttons = [
+_ADMIN_MAIN_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
         [
             InlineKeyboardButton(text="📊 Refresh Dashboard", callback_data="admin_dashboard"),
         ],
@@ -61,7 +60,18 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🏠 User Main Menu", callback_data="menu_home"),
         ],
     ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+)
+
+_ADMIN_CANCEL_KB = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Cancel Operation", callback_data="admin_cancel_fsm")]
+    ]
+)
+
+
+def get_admin_main_keyboard() -> InlineKeyboardMarkup:
+    """Return admin dashboard main menu keyboard singleton."""
+    return _ADMIN_MAIN_KB
 
 
 def get_admin_coupons_keyboard(coupons: List[Coupon], page: int, total_pages: int) -> InlineKeyboardMarkup:
@@ -274,9 +284,5 @@ def get_admin_fraud_detail_keyboard(user: User, has_device: bool) -> InlineKeybo
 
 
 def get_admin_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Standard cancel button during multi-step forms."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Cancel Operation", callback_data="admin_cancel_fsm")]
-        ]
-    )
+    """Return standard cancel button during multi-step forms singleton."""
+    return _ADMIN_CANCEL_KB

@@ -255,12 +255,25 @@ class Settings(BaseSettings):
         return channels
 
     def is_admin(self, user_id: Any) -> bool:
-        """Check whether a given Telegram user ID is an authorized admin."""
+        """Check whether a given Telegram user ID is an authorized admin (fast path)."""
         if user_id is None:
             return False
         try:
             numeric_id = int(str(user_id).strip())
-            return numeric_id in self.admin_ids
+            # Fast check primary admin
+            if self.ADMIN_ID and numeric_id == int(self.ADMIN_ID):
+                return True
+            if not self.ADDITIONAL_ADMINS:
+                return False
+            for item in str(self.ADDITIONAL_ADMINS).split(","):
+                clean = item.strip().strip('"').strip("'").strip()
+                if clean:
+                    try:
+                        if int(clean) == numeric_id:
+                            return True
+                    except ValueError:
+                        pass
+            return False
         except (ValueError, TypeError):
             return False
 
