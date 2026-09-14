@@ -1,6 +1,6 @@
 """Master Inline keyboards and callback data definitions for Codes Xpress 💎."""
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from urllib.parse import quote_plus
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
@@ -336,12 +336,32 @@ def get_redeem_confirm_keyboard(
     )
 
 
+REQUIRED_CHANNEL_ORDER = [
+    "@offermate",
+    "@offerraider",
+    "@multi_purpose_with_me_sale",
+    "@offerelite",
+]
+
+
+def _get_channel_canonical_order_and_label(ch: Channel) -> Tuple[int, str]:
+    """Determine canonical order index (1..4) and button label for a required channel."""
+    cid = (ch.channel_id or "").strip().lower()
+    uname = (ch.username or "").strip().lower()
+    if uname and not uname.startswith("@"):
+        uname = f"@{uname}"
+    for idx, target in enumerate(REQUIRED_CHANNEL_ORDER, 1):
+        if cid == target or uname == target:
+            return idx, f"📢 Channel {idx}"
+    return 999 + (ch.id or 0), f"📢 Channel {ch.id or ''}"
+
+
 def get_channels_keyboard(channels: List[Channel], is_retry: bool = False) -> InlineKeyboardMarkup:
-    """Create keyboard with links to join required channels + verify button."""
+    """Create keyboard with links to join required channels in exact order + verify button."""
+    sorted_channels = sorted(channels, key=lambda c: _get_channel_canonical_order_and_label(c)[0])
     buttons = []
-    for i, ch in enumerate(channels, 1):
-        clean_title = ch.title or (ch.username or ch.channel_id).lstrip("@")
-        label = f"📢 Join {clean_title}"
+    for ch in sorted_channels:
+        _, label = _get_channel_canonical_order_and_label(ch)
         link = ch.invite_link
         if not link or not link.startswith("http"):
             username = ch.username or (ch.channel_id.lstrip("@") if ch.channel_id.startswith("@") else None)

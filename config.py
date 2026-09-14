@@ -100,11 +100,11 @@ class Settings(BaseSettings):
 
     # Required Channels Configuration (Centralized)
     CHANNEL_1: Optional[str] = Field(
-        default="@OfferRaider",
+        default="@OfferMate",
         description="First required Telegram channel for referral verification",
     )
     CHANNEL_2: Optional[str] = Field(
-        default="@OfferMate",
+        default="@OfferRaider",
         description="Second required Telegram channel for referral verification",
     )
     CHANNEL_3: Optional[str] = Field(

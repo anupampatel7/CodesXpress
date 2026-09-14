@@ -12,17 +12,17 @@ from services.channel_service import ChannelService
 from utils.formatting import format_channel_diagnostic_error
 
 
-FOUR_CHANNELS = ["@OfferRaider", "@OfferMate", "@MULTI_purpose_with_me_sale", "@offerelite"]
+FOUR_CHANNELS = ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]
 
 
 @pytest.mark.asyncio
 async def test_four_channel_configuration_and_seeding(db_session: AsyncSession):
-    """Verify that CHANNEL_1, CHANNEL_2, CHANNEL_3, CHANNEL_4 default list contains all 4 required channels."""
+    """Verify that CHANNEL_1, CHANNEL_2, CHANNEL_3, CHANNEL_4 default list contains all 4 required channels in order."""
     channels_configured = settings.default_channel_list
-    assert "@OfferRaider" in channels_configured
-    assert "@OfferMate" in channels_configured
-    assert "@MULTI_purpose_with_me_sale" in channels_configured
-    assert "@offerelite" in channels_configured
+    assert channels_configured[0] == "@OfferMate"
+    assert channels_configured[1] == "@OfferRaider"
+    assert channels_configured[2] == "@MULTI_purpose_with_me_sale"
+    assert channels_configured[3] == "@offerelite"
     assert "@Grabmint" not in channels_configured
     assert len(channels_configured) >= 4
 
@@ -41,8 +41,8 @@ async def test_four_channel_configuration_and_seeding(db_session: AsyncSession):
     required = await ChannelService.get_required_channels(db_session)
     assert len(required) == 4
     ids = [c.channel_id for c in required]
-    assert "@OfferRaider" in ids
     assert "@OfferMate" in ids
+    assert "@OfferRaider" in ids
     assert "@MULTI_purpose_with_me_sale" in ids
     assert "@offerelite" in ids
     assert "@Grabmint" not in ids
@@ -315,9 +315,10 @@ async def test_bot_permission_diagnostic_check(mock_bot):
 
 @pytest.mark.asyncio
 async def test_channel_keyboard_contains_all_four_and_verify(db_session: AsyncSession):
-    """Verify that get_channels_keyboard creates buttons for all 4 channels and Verify button."""
+    """Verify that get_channels_keyboard creates buttons for all 4 channels in exact order and labels."""
     from keyboards.user import get_channels_keyboard
 
+    # Channels provided in arbitrary order
     channels = [
         Channel(id=1, channel_id="@OfferRaider", title="OfferRaider", invite_link="https://t.me/OfferRaider", is_required=True, is_active=True),
         Channel(id=2, channel_id="@OfferMate", title="OfferMate", invite_link="https://t.me/OfferMate", is_required=True, is_active=True),
@@ -326,14 +327,27 @@ async def test_channel_keyboard_contains_all_four_and_verify(db_session: AsyncSe
     ]
 
     kb = get_channels_keyboard(channels)
-    button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-
-    assert any("OfferRaider" in text for text in button_texts)
-    assert any("OfferMate" in text for text in button_texts)
-    assert any("MULTI_purpose_with_me_sale" in text for text in button_texts)
-    assert any("offerelite" in text for text in button_texts)
-    assert any("Verify" in text for text in button_texts)
     assert len(kb.inline_keyboard) == 5  # 4 channel rows + 1 verify row
+
+    # Channel 1 -> @OfferMate (https://t.me/OfferMate)
+    assert kb.inline_keyboard[0][0].text == "📢 Channel 1"
+    assert kb.inline_keyboard[0][0].url == "https://t.me/OfferMate"
+
+    # Channel 2 -> @OfferRaider (https://t.me/OfferRaider)
+    assert kb.inline_keyboard[1][0].text == "📢 Channel 2"
+    assert kb.inline_keyboard[1][0].url == "https://t.me/OfferRaider"
+
+    # Channel 3 -> @MULTI_purpose_with_me_sale (https://t.me/MULTI_purpose_with_me_sale)
+    assert kb.inline_keyboard[2][0].text == "📢 Channel 3"
+    assert kb.inline_keyboard[2][0].url == "https://t.me/MULTI_purpose_with_me_sale"
+
+    # Channel 4 -> @offerelite (https://t.me/offerelite)
+    assert kb.inline_keyboard[3][0].text == "📢 Channel 4"
+    assert kb.inline_keyboard[3][0].url == "https://t.me/offerelite"
+
+    # Verify button
+    assert kb.inline_keyboard[4][0].text == "✅ Verify Membership"
+    assert kb.inline_keyboard[4][0].callback_data == "verify_channels_click"
 
 
 @pytest.mark.asyncio

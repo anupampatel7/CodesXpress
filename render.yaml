@@ -18,9 +18,9 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CHANNEL_1
-        value: "@OfferRaider"
-      - key: CHANNEL_2
         value: "@OfferMate"
+      - key: CHANNEL_2
+        value: "@OfferRaider"
       - key: CHANNEL_3
         value: "@MULTI_purpose_with_me_sale"
       - key: CHANNEL_4
