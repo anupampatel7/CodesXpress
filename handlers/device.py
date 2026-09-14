@@ -105,27 +105,36 @@ async def handle_webapp_verification_data(
     is_admin: bool,
     bot: Bot,
 ) -> None:
-    """Process raw device fingerprint submitted from Telegram WebApp."""
+    """Process device verification completion submitted from Telegram WebApp."""
     from_user = message.from_user
     if not from_user or not message.web_app_data:
         return
 
     raw_data = message.web_app_data.data
-    fp_data = {}
-    init_data_raw = None
-
+    parsed_payload = {}
     try:
-        parsed_payload = json.loads(raw_data)
-        if isinstance(parsed_payload, dict):
-            fp_data = parsed_payload.get("fingerprint", parsed_payload)
-            init_data_raw = parsed_payload.get("init_data")
+        parsed_payload = json.loads(raw_data) if raw_data else {}
     except Exception:
-        fp_data = {"raw": raw_data}
+        parsed_payload = {"raw": raw_data}
 
-    # Validate initData if present
-    if init_data_raw:
-        validated_ctx = validate_telegram_webapp_init_data(init_data_raw, settings.BOT_TOKEN)
-        if validated_ctx and "user" in validated_ctx:
+    # Check if user is already verified in DB or admin
+    is_already_verified = is_admin or await DeviceService.is_device_verified(session, from_user.id)
+
+    if not is_already_verified:
+        init_data_raw = parsed_payload.get("init_data") if isinstance(parsed_payload, dict) else None
+        fp_data = parsed_payload.get("fingerprint") if isinstance(parsed_payload, dict) else None
+
+        # If client passed init_data, cryptographically validate Telegram HMAC
+        if init_data_raw:
+            validated_ctx = validate_telegram_webapp_init_data(init_data_raw, settings.BOT_TOKEN)
+            if not validated_ctx or "user" not in validated_ctx:
+                logger.warning(f"Spoofing rejected: Invalid initData for User {from_user.id}")
+                await message.answer(
+                    format_device_blocked(),
+                    reply_markup=get_device_blocked_keyboard(),
+                    parse_mode="HTML",
+                )
+                return
             verified_id = validated_ctx["user"].get("id")
             if verified_id and int(verified_id) != from_user.id:
                 logger.warning(f"Spoofing detected: WebApp claimed User {verified_id} but Telegram sender is {from_user.id}")
@@ -136,23 +145,38 @@ async def handle_webapp_verification_data(
                 )
                 return
 
-    # Verify and bind device
-    success, code, binding = await DeviceService.verify_and_bind_device(
-        session=session,
-        telegram_user_id=from_user.id,
-        fingerprint_payload=fp_data,
-        user_agent="TelegramWebApp/1.0",
-    )
+        # If payload only contains client claim {"verified": true} without backend DB binding or fingerprint
+        if not fp_data:
+            if isinstance(parsed_payload, dict) and any(k in parsed_payload for k in ("device_id", "screen", "canvas", "timezone")):
+                fp_data = parsed_payload
+            else:
+                # No fingerprint and not verified in DB -> reject client-only claim
+                logger.warning(f"Verification rejected: Client-only verified claim without backend binding for User {from_user.id}")
+                await message.answer(
+                    format_device_blocked(),
+                    reply_markup=get_device_blocked_keyboard(),
+                    parse_mode="HTML",
+                )
+                return
 
-    if not success and code in ("DEVICE_ALREADY_BOUND", "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE", "DEVICE_BLOCKED"):
-        await message.answer(
-            format_device_blocked(),
-            reply_markup=get_device_blocked_keyboard(),
-            parse_mode="HTML",
+        # Attempt atomic device binding
+        success, code, binding = await DeviceService.verify_and_bind_device(
+            session=session,
+            telegram_user_id=from_user.id,
+            fingerprint_payload=fp_data,
+            user_agent="TelegramWebApp/1.0",
         )
-        return
 
-    # Check channels
+        if not success:
+            logger.warning(f"Device verification failed for User {from_user.id}: {code}")
+            await message.answer(
+                format_device_blocked(),
+                reply_markup=get_device_blocked_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+
+    # Device is verified! Check channel requirements
     all_joined, missing = await ChannelService.verify_all_required_channels(
         bot=bot,
         session=session,
@@ -168,6 +192,7 @@ async def handle_webapp_verification_data(
         await message.answer(success_text, reply_markup=channel_kb, parse_mode="HTML")
         return
 
+    # Fulfill referral reward atomically if pending
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if user and user.referred_by:
         await ReferralService.process_referral_completion(

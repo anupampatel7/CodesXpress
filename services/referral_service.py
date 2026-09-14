@@ -52,7 +52,7 @@ class ReferralService:
             return False, None, 0
 
         from services.device_service import DeviceService
-        is_device_ok = await DeviceService.is_device_verified(session, referred_user.telegram_id)
+        is_device_ok = await DeviceService.is_device_verified(session, referred_user.telegram_id, force_refresh=True)
         if not is_device_ok:
             logger.info(f"Referral #{referral.id} completion held: User #{referred_user.telegram_id} pending device verification")
             return False, None, 0

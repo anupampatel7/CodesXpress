@@ -10,11 +10,15 @@ from utils.security import hash_device_fingerprint
 
 import time
 
+import asyncio
+from sqlalchemy.exc import IntegrityError
+
 logger = logging.getLogger(__name__)
 
 # In-memory device verification positive cache: (telegram_user_id -> expiry_monotonic)
 _DEVICE_VERIFIED_CACHE: Dict[int, float] = {}
 _DEVICE_VERIFIED_TTL = 120.0  # 2 minutes
+_device_bind_lock = asyncio.Lock()
 
 
 def invalidate_device_cache(telegram_user_id: Optional[int] = None) -> None:
@@ -53,98 +57,126 @@ class DeviceService:
         fp_hash = hash_device_fingerprint(fingerprint_payload)
         now = utc_now()
 
-        # Check existing binding for this fingerprint
-        stmt = select(DeviceBinding).where(DeviceBinding.fingerprint_hash == fp_hash)
-        res = await session.execute(stmt)
-        existing_binding = res.scalar_one_or_none()
+        async with _device_bind_lock:
+            try:
+                # Check existing binding for this fingerprint
+                stmt = select(DeviceBinding).where(DeviceBinding.fingerprint_hash == fp_hash)
+                res = await session.execute(stmt)
+                existing_binding = res.scalar_one_or_none()
 
-        if existing_binding:
-            if existing_binding.status == DeviceBindingStatus.BLOCKED:
-                logger.warning(f"Verification rejected: Blocked device fingerprint {fp_hash[:8]}... for User {telegram_user_id}")
-                return False, "DEVICE_BLOCKED", existing_binding
+                if existing_binding:
+                    if existing_binding.status == DeviceBindingStatus.BLOCKED:
+                        logger.warning(f"Verification rejected: Blocked device fingerprint {fp_hash[:8]}... for User {telegram_user_id}")
+                        return False, "DEVICE_BLOCKED", existing_binding
 
-            if existing_binding.status == DeviceBindingStatus.ACTIVE:
-                if existing_binding.telegram_user_id == telegram_user_id:
-                    # Same user returning on verified device -> Valid
-                    existing_binding.last_seen_at = now
-                    if ip_address:
-                        existing_binding.ip_address = ip_address
-                    await session.flush()
-                    _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
-                    return True, "DEVICE_VERIFIED_EXISTING", existing_binding
-                else:
-                    # Device already claimed by another Telegram ID -> REJECT
-                    logger.warning(
-                        f"Fraud blocked: Device {fp_hash[:8]}... already bound to User {existing_binding.telegram_user_id}, "
-                        f"attempted by different User {telegram_user_id}"
-                    )
-                    return False, "DEVICE_ALREADY_BOUND", existing_binding
+                    if existing_binding.status == DeviceBindingStatus.ACTIVE:
+                        if existing_binding.telegram_user_id == telegram_user_id:
+                            # Same user returning on verified device -> Valid
+                            existing_binding.last_seen_at = now
+                            if ip_address:
+                                existing_binding.ip_address = ip_address
+                            await session.flush()
+                            _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
+                            return True, "DEVICE_VERIFIED_EXISTING", existing_binding
+                        else:
+                            # Device already claimed by another Telegram ID -> REJECT
+                            logger.warning(
+                                f"Fraud blocked: Device {fp_hash[:8]}... already bound to User {existing_binding.telegram_user_id}, "
+                                f"attempted by different User {telegram_user_id}"
+                            )
+                            return False, "DEVICE_ALREADY_BOUND", existing_binding
 
-            elif existing_binding.status == DeviceBindingStatus.RELEASED:
-                # Device was unlinked by admin -> Rebind to this user
-                existing_binding.telegram_user_id = telegram_user_id
-                existing_binding.status = DeviceBindingStatus.ACTIVE
-                existing_binding.last_seen_at = now
-                if user_agent:
-                    existing_binding.user_agent = user_agent[:256]
-                if ip_address:
-                    existing_binding.ip_address = ip_address
-                await session.flush()
-                _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
-                logger.info(f"Rebound released device {fp_hash[:8]}... to User {telegram_user_id}")
-                return True, "DEVICE_REBOUND", existing_binding
+                    elif existing_binding.status == DeviceBindingStatus.RELEASED:
+                        # Device was unlinked by admin -> Rebind to this user
+                        existing_binding.telegram_user_id = telegram_user_id
+                        existing_binding.status = DeviceBindingStatus.ACTIVE
+                        existing_binding.last_seen_at = now
+                        if user_agent:
+                            existing_binding.user_agent = user_agent[:256]
+                        if ip_address:
+                            existing_binding.ip_address = ip_address
+                        await session.flush()
+                        _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
+                        logger.info(f"Rebound released device {fp_hash[:8]}... to User {telegram_user_id}")
+                        return True, "DEVICE_REBOUND", existing_binding
 
-        # Check if this user already has an active binding with a different fingerprint
-        user_stmt = select(DeviceBinding).where(
-            DeviceBinding.telegram_user_id == telegram_user_id,
-            DeviceBinding.status == DeviceBindingStatus.ACTIVE,
-        )
-        user_res = await session.execute(user_stmt)
-        user_existing = user_res.scalar_one_or_none()
-
-        if user_existing:
-            if user_existing.fingerprint_hash != fp_hash:
-                logger.warning(
-                    f"Rejected verification: Telegram User {telegram_user_id} is already bound to device "
-                    f"{user_existing.fingerprint_hash[:8]}..., attempted from different device {fp_hash[:8]}..."
+                # Check if this user already has an active binding with a different fingerprint
+                user_stmt = select(DeviceBinding).where(
+                    DeviceBinding.telegram_user_id == telegram_user_id,
+                    DeviceBinding.status == DeviceBindingStatus.ACTIVE,
                 )
-                return False, "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE", user_existing
-            else:
-                user_existing.last_seen_at = now
+                user_res = await session.execute(user_stmt)
+                user_existing = user_res.scalar_one_or_none()
+
+                if user_existing:
+                    if user_existing.fingerprint_hash != fp_hash:
+                        logger.warning(
+                            f"Rejected verification: Telegram User {telegram_user_id} is already bound to device "
+                            f"{user_existing.fingerprint_hash[:8]}..., attempted from different device {fp_hash[:8]}..."
+                        )
+                        return False, "USER_ALREADY_BOUND_TO_ANOTHER_DEVICE", user_existing
+                    else:
+                        user_existing.last_seen_at = now
+                        await session.flush()
+                        _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
+                        return True, "DEVICE_VERIFIED_EXISTING", user_existing
+
+                # New device fingerprint + New user -> Create atomic binding
+                new_binding = DeviceBinding(
+                    fingerprint_hash=fp_hash,
+                    telegram_user_id=telegram_user_id,
+                    status=DeviceBindingStatus.ACTIVE,
+                    first_verified_at=now,
+                    last_seen_at=now,
+                    risk_score=0,
+                    user_agent=user_agent[:256] if user_agent else None,
+                    ip_address=ip_address,
+                )
+                session.add(new_binding)
                 await session.flush()
                 _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
-                return True, "DEVICE_VERIFIED_EXISTING", user_existing
+                logger.info(f"Successfully bound new device {fp_hash[:8]}... to User {telegram_user_id}")
+                return True, "DEVICE_BOUND_NEW", new_binding
 
-        # New device fingerprint + New user -> Create atomic binding
-        new_binding = DeviceBinding(
-            fingerprint_hash=fp_hash,
-            telegram_user_id=telegram_user_id,
-            status=DeviceBindingStatus.ACTIVE,
-            first_verified_at=now,
-            last_seen_at=now,
-            risk_score=0,
-            user_agent=user_agent[:256] if user_agent else None,
-            ip_address=ip_address,
-        )
-        session.add(new_binding)
-        await session.flush()
-        _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
-        logger.info(f"Successfully bound new device {fp_hash[:8]}... to User {telegram_user_id}")
-        return True, "DEVICE_BOUND_NEW", new_binding
+            except IntegrityError:
+                await session.rollback()
+                invalidate_device_cache(telegram_user_id)
+                logger.warning(f"IntegrityError encountered during device binding for {telegram_user_id} with hash {fp_hash[:8]}...")
+                # Re-query under existing transaction state
+                stmt = select(DeviceBinding).where(DeviceBinding.fingerprint_hash == fp_hash)
+                res = await session.execute(stmt)
+                conflict_binding = res.scalar_one_or_none()
+                if conflict_binding:
+                    if conflict_binding.telegram_user_id == telegram_user_id and conflict_binding.status == DeviceBindingStatus.ACTIVE:
+                        return True, "DEVICE_VERIFIED_EXISTING", conflict_binding
+                    return False, "DEVICE_ALREADY_BOUND", conflict_binding
+                return False, "DEVICE_ALREADY_BOUND", None
 
     @staticmethod
-    async def is_device_verified(session: AsyncSession, telegram_user_id: int) -> bool:
+    async def is_device_verified(session: AsyncSession, telegram_user_id: int, force_refresh: bool = False) -> bool:
         """Check whether a Telegram user has an active device binding (Admins are always exempt)."""
         from config import settings
         if settings.is_admin(telegram_user_id):
             return True
+
+        if not force_refresh:
+            cached_exp = _DEVICE_VERIFIED_CACHE.get(telegram_user_id)
+            if cached_exp and cached_exp > time.monotonic():
+                return True
 
         stmt = select(DeviceBinding.id).where(
             DeviceBinding.telegram_user_id == telegram_user_id,
             DeviceBinding.status == DeviceBindingStatus.ACTIVE,
         )
         res = await session.execute(stmt)
-        return res.scalar_one_or_none() is not None
+        is_verified = res.scalar_one_or_none() is not None
+
+        if is_verified:
+            _DEVICE_VERIFIED_CACHE[telegram_user_id] = time.monotonic() + _DEVICE_VERIFIED_TTL
+        else:
+            _DEVICE_VERIFIED_CACHE.pop(telegram_user_id, None)
+
+        return is_verified
 
     @staticmethod
     async def get_device_binding_by_user(

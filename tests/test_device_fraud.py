@@ -651,3 +651,122 @@ async def test_admin_device_verification_exemption(db_session: AsyncSession, moc
     )
     assert ok_blocked is False
     assert code_blocked == "DEVICE_ALREADY_BOUND"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_device_binding_race_condition(db_session: AsyncSession):
+    """Test race condition protection: Concurrent binding attempts for same device fingerprint."""
+    user_a = 88001
+    user_b = 88002
+    fp = {"device_id": "concurrent_race_device_id_88000"}
+
+    # Simulate concurrent calls to verify_and_bind_device
+    results = await asyncio.gather(
+        DeviceService.verify_and_bind_device(db_session, user_a, fp),
+        DeviceService.verify_and_bind_device(db_session, user_b, fp),
+    )
+    await db_session.commit()
+
+    successes = [r for r in results if r[0] is True]
+    failures = [r for r in results if r[0] is False]
+
+    # Exactly one user succeeds in binding the device
+    assert len(successes) == 1
+    assert successes[0][1] == "DEVICE_BOUND_NEW"
+
+    # The other user is strictly rejected
+    assert len(failures) == 1
+    assert failures[0][1] == "DEVICE_ALREADY_BOUND"
+
+
+@pytest.mark.asyncio
+async def test_device_cache_invalidation_and_safety(db_session: AsyncSession):
+    """Test that device verification cache is properly populated and immediately invalidated on mutation."""
+    from services.device_service import _DEVICE_VERIFIED_CACHE, invalidate_device_cache
+    user_id = 89001
+    fp = {"device_id": "cache_test_device_89001"}
+
+    # 1. Unverified user -> False, not in cache
+    assert await DeviceService.is_device_verified(db_session, user_id) is False
+    assert user_id not in _DEVICE_VERIFIED_CACHE
+
+    # 2. Bind device -> Cache updated
+    ok, _, _ = await DeviceService.verify_and_bind_device(db_session, user_id, fp)
+    await db_session.commit()
+    assert ok is True
+    assert user_id in _DEVICE_VERIFIED_CACHE
+    assert await DeviceService.is_device_verified(db_session, user_id) is True
+
+    # 3. Release device -> Cache invalidated immediately
+    rel_ok, _ = await DeviceService.release_device_binding(db_session, admin_id=999, telegram_user_id=user_id)
+    await db_session.commit()
+    assert rel_ok is True
+    assert user_id not in _DEVICE_VERIFIED_CACHE
+    assert await DeviceService.is_device_verified(db_session, user_id, force_refresh=True) is False
+
+    # 4. Re-bind
+    await DeviceService.verify_and_bind_device(db_session, user_id, fp)
+    await db_session.commit()
+    assert await DeviceService.is_device_verified(db_session, user_id) is True
+
+    # 5. Block device -> Cache invalidated immediately
+    blk_ok, _ = await DeviceService.block_device_binding(db_session, admin_id=999, telegram_user_id=user_id)
+    await db_session.commit()
+    assert blk_ok is True
+    assert user_id not in _DEVICE_VERIFIED_CACHE
+    assert await DeviceService.is_device_verified(db_session, user_id, force_refresh=True) is False
+
+
+@pytest.mark.asyncio
+async def test_fake_webapp_data_rejected_without_backend_verification(db_session: AsyncSession, mock_bot):
+    """Test that client-provided dummy/fake 'verified: true' web_app_data is rejected without backend HMAC/DB binding."""
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import Message, User as TgUser, WebAppData
+    from handlers.device import handle_webapp_verification_data
+
+    user_id = 92001
+    mock_msg = MagicMock(spec=Message)
+    mock_msg.from_user = MagicMock(spec=TgUser)
+    mock_msg.from_user.id = user_id
+    mock_msg.web_app_data = MagicMock(spec=WebAppData)
+    # Fake client data pretending to be verified
+    mock_msg.web_app_data.data = json.dumps({"verified": True, "code": "FAKE_CLIENT_CLAIM"})
+    mock_msg.answer = AsyncMock()
+
+    await handle_webapp_verification_data(mock_msg, db_session, is_admin=False, bot=mock_bot)
+    await db_session.commit()
+
+    # Must reject and show blocked / unavailable
+    mock_msg.answer.assert_called_once()
+    out_text = mock_msg.answer.call_args[0][0]
+    assert "Verification unavailable" in out_text or "blocked" in out_text
+    assert await DeviceService.is_device_verified(db_session, user_id, force_refresh=True) is False
+
+
+@pytest.mark.asyncio
+async def test_blocked_device_remains_blocked(db_session: AsyncSession):
+    """Test that a blocked device binding cannot be bound by any new user."""
+    user_a = 93001
+    user_b = 93002
+    fp = {"device_id": "blocked_fraud_device_93000"}
+
+    # User A binds device
+    ok, _, _ = await DeviceService.verify_and_bind_device(db_session, user_a, fp)
+    await db_session.commit()
+    assert ok is True
+
+    # Admin blocks device
+    b_ok, _ = await DeviceService.block_device_binding(db_session, admin_id=999, telegram_user_id=user_a)
+    await db_session.commit()
+    assert b_ok is True
+
+    # User A tries to re-verify -> rejected DEVICE_BLOCKED
+    ok_a2, code_a2, _ = await DeviceService.verify_and_bind_device(db_session, user_a, fp)
+    assert ok_a2 is False
+    assert code_a2 == "DEVICE_BLOCKED"
+
+    # User B tries to verify with this device -> rejected DEVICE_BLOCKED
+    ok_b, code_b, _ = await DeviceService.verify_and_bind_device(db_session, user_b, fp)
+    assert ok_b is False
+    assert code_b == "DEVICE_BLOCKED"
+
