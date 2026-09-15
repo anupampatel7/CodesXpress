@@ -12,7 +12,7 @@ from services.channel_service import ChannelService
 from utils.formatting import format_channel_diagnostic_error
 
 
-FOUR_CHANNELS = ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]
+FOUR_CHANNELS = ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]
 
 
 @pytest.mark.asyncio
@@ -21,9 +21,10 @@ async def test_four_channel_configuration_and_seeding(db_session: AsyncSession):
     channels_configured = settings.default_channel_list
     assert channels_configured[0] == "@OfferMate"
     assert channels_configured[1] == "@OfferRaider"
-    assert channels_configured[2] == "@MULTI_purpose_with_me_sale"
+    assert channels_configured[2] == "@Offer_Xpress"
     assert channels_configured[3] == "@offerelite"
     assert "@Grabmint" not in channels_configured
+    assert "@MULTI_purpose_with_me_sale" not in channels_configured
     assert len(channels_configured) >= 4
 
     # Seed all 4 channels
@@ -43,9 +44,10 @@ async def test_four_channel_configuration_and_seeding(db_session: AsyncSession):
     ids = [c.channel_id for c in required]
     assert "@OfferMate" in ids
     assert "@OfferRaider" in ids
-    assert "@MULTI_purpose_with_me_sale" in ids
+    assert "@Offer_Xpress" in ids
     assert "@offerelite" in ids
     assert "@Grabmint" not in ids
+    assert "@MULTI_purpose_with_me_sale" not in ids
 
 
 @pytest.mark.asyncio
@@ -155,8 +157,8 @@ async def test_channel_verification_offermate_missing(db_session: AsyncSession, 
 
 
 @pytest.mark.asyncio
-async def test_channel_verification_multi_purpose_missing(db_session: AsyncSession, mock_bot):
-    """Test: When MULTI_purpose_with_me_sale is missing -> FAIL and show missing."""
+async def test_channel_verification_offer_xpress_missing(db_session: AsyncSession, mock_bot):
+    """Test: When Offer_Xpress is missing -> FAIL and show missing."""
     for ch_name in FOUR_CHANNELS:
         await ChannelService.add_channel(
             session=db_session,
@@ -175,7 +177,7 @@ async def test_channel_verification_multi_purpose_missing(db_session: AsyncSessi
         status = ChatMemberStatus.LEFT
 
     async def side_effect(chat_id, user_id):
-        if chat_id == "@MULTI_purpose_with_me_sale":
+        if chat_id == "@Offer_Xpress":
             return MemberLeft()
         return MemberJoined()
 
@@ -189,7 +191,7 @@ async def test_channel_verification_multi_purpose_missing(db_session: AsyncSessi
 
     assert all_joined is False
     assert len(missing) == 1
-    assert missing[0].channel_id == "@MULTI_purpose_with_me_sale"
+    assert missing[0].channel_id == "@Offer_Xpress"
 
 
 @pytest.mark.asyncio
@@ -322,7 +324,7 @@ async def test_channel_keyboard_contains_all_four_and_verify(db_session: AsyncSe
     channels = [
         Channel(id=1, channel_id="@OfferRaider", title="OfferRaider", invite_link="https://t.me/OfferRaider", is_required=True, is_active=True),
         Channel(id=2, channel_id="@OfferMate", title="OfferMate", invite_link="https://t.me/OfferMate", is_required=True, is_active=True),
-        Channel(id=3, channel_id="@MULTI_purpose_with_me_sale", title="MULTI_purpose_with_me_sale", invite_link="https://t.me/MULTI_purpose_with_me_sale", is_required=True, is_active=True),
+        Channel(id=3, channel_id="@Offer_Xpress", title="Offer_Xpress", invite_link="https://t.me/Offer_Xpress", is_required=True, is_active=True),
         Channel(id=4, channel_id="@offerelite", title="offerelite", invite_link="https://t.me/offerelite", is_required=True, is_active=True),
     ]
 
@@ -337,9 +339,9 @@ async def test_channel_keyboard_contains_all_four_and_verify(db_session: AsyncSe
     assert kb.inline_keyboard[1][0].text == "📢 Channel 2"
     assert kb.inline_keyboard[1][0].url == "https://t.me/OfferRaider"
 
-    # Channel 3 -> @MULTI_purpose_with_me_sale (https://t.me/MULTI_purpose_with_me_sale)
+    # Channel 3 -> @Offer_Xpress (https://t.me/Offer_Xpress)
     assert kb.inline_keyboard[2][0].text == "📢 Channel 3"
-    assert kb.inline_keyboard[2][0].url == "https://t.me/MULTI_purpose_with_me_sale"
+    assert kb.inline_keyboard[2][0].url == "https://t.me/Offer_Xpress"
 
     # Channel 4 -> @offerelite (https://t.me/offerelite)
     assert kb.inline_keyboard[3][0].text == "📢 Channel 4"
@@ -385,12 +387,12 @@ async def test_global_channel_membership_middleware_all_cases(db_session: AsyncS
     mock_handler.assert_called_once()
     mock_msg.answer.assert_not_called()
 
-    # 2. User leaves one channel (@MULTI_purpose_with_me_sale) -> blocked, missing MULTI_purpose_with_me_sale shown
+    # 2. User leaves one channel (@Offer_Xpress) -> blocked, missing Offer_Xpress shown
     class MemberLeft:
         status = ChatMemberStatus.LEFT
 
     async def side_effect_one_left(chat_id, user_id):
-        if chat_id == "@MULTI_purpose_with_me_sale":
+        if chat_id == "@Offer_Xpress":
             return MemberLeft()
         return MemberJoined()
 
@@ -404,7 +406,7 @@ async def test_global_channel_membership_middleware_all_cases(db_session: AsyncS
     mock_handler.assert_not_called()  # Handler blocked
     mock_msg.answer.assert_called_once()
     blocked_text = mock_msg.answer.call_args[0][0]
-    assert "MULTI_purpose_with_me_sale" in blocked_text
+    assert "Offer_Xpress" in blocked_text
     assert "Almost there" in blocked_text or "You still need to join" in blocked_text
 
     # 3. User leaves multiple channels (@OfferMate and @offerelite) -> blocked, all missing shown
@@ -545,7 +547,7 @@ async def test_coupon_redemption_and_referrals_blocked_when_channel_left(db_sess
 
 @pytest.mark.asyncio
 async def test_legacy_grabmint_channel_migration_and_deduplication(db_session: AsyncSession):
-    """Test: When legacy @Grabmint exists in DB, seeding safely migrates it to @MULTI_purpose_with_me_sale without duplicates."""
+    """Test: When legacy @Grabmint exists in DB, seeding safely migrates it to @Offer_Xpress without duplicates."""
     from bot import seed_initial_channels
     from contextlib import asynccontextmanager
 
@@ -565,7 +567,7 @@ async def test_legacy_grabmint_channel_migration_and_deduplication(db_session: A
     # Verify legacy @Grabmint is present
     req_before = await ChannelService.get_required_channels(db_session)
     assert any(c.channel_id == "@Grabmint" for c in req_before)
-    assert not any(c.channel_id == "@MULTI_purpose_with_me_sale" for c in req_before)
+    assert not any(c.channel_id == "@Offer_Xpress" for c in req_before)
 
     # 2. Run seed_initial_channels with current session
     @asynccontextmanager
@@ -582,11 +584,62 @@ async def test_legacy_grabmint_channel_migration_and_deduplication(db_session: A
     assert len(req_after) == 4
     assert "@OfferRaider" in ids_after
     assert "@OfferMate" in ids_after
-    assert "@MULTI_purpose_with_me_sale" in ids_after
+    assert "@Offer_Xpress" in ids_after
     assert "@offerelite" in ids_after
     assert "@Grabmint" not in ids_after
+    assert "@MULTI_purpose_with_me_sale" not in ids_after
 
-    migrated_ch = next(c for c in req_after if c.channel_id == "@MULTI_purpose_with_me_sale")
-    assert migrated_ch.invite_link == "https://t.me/MULTI_purpose_with_me_sale"
+    migrated_ch = next(c for c in req_after if c.channel_id == "@Offer_Xpress")
+    assert migrated_ch.invite_link == "https://t.me/Offer_Xpress"
+    assert migrated_ch.is_required is True
+    assert migrated_ch.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_legacy_multi_purpose_channel_migration_and_deduplication(db_session: AsyncSession):
+    """Test: When legacy @MULTI_purpose_with_me_sale exists in DB, seeding safely migrates it to @Offer_Xpress without duplicates."""
+    from bot import seed_initial_channels
+    from contextlib import asynccontextmanager
+
+    # 1. Seed existing database with legacy channels containing @MULTI_purpose_with_me_sale
+    legacy_channels = ["@OfferRaider", "@OfferMate", "@MULTI_purpose_with_me_sale", "@offerelite"]
+    for ch_name in legacy_channels:
+        await ChannelService.add_channel(
+            session=db_session,
+            admin_id=123,
+            channel_id=ch_name,
+            title=ch_name.lstrip("@"),
+            invite_link=f"https://t.me/{ch_name.lstrip('@')}",
+            username=ch_name.lstrip("@"),
+        )
+    await db_session.commit()
+
+    # Verify legacy @MULTI_purpose_with_me_sale is present
+    req_before = await ChannelService.get_required_channels(db_session)
+    assert any(c.channel_id == "@MULTI_purpose_with_me_sale" for c in req_before)
+    assert not any(c.channel_id == "@Offer_Xpress" for c in req_before)
+
+    # 2. Run seed_initial_channels with current session
+    @asynccontextmanager
+    async def mock_session_factory():
+        yield db_session
+
+    await seed_initial_channels(session_factory=mock_session_factory)
+    await db_session.commit()
+
+    # 3. Verify migration result
+    req_after = await ChannelService.get_required_channels(db_session)
+    ids_after = [c.channel_id for c in req_after]
+
+    assert len(req_after) == 4
+    assert "@OfferRaider" in ids_after
+    assert "@OfferMate" in ids_after
+    assert "@Offer_Xpress" in ids_after
+    assert "@offerelite" in ids_after
+    assert "@Grabmint" not in ids_after
+    assert "@MULTI_purpose_with_me_sale" not in ids_after
+
+    migrated_ch = next(c for c in req_after if c.channel_id == "@Offer_Xpress")
+    assert migrated_ch.invite_link == "https://t.me/Offer_Xpress"
     assert migrated_ch.is_required is True
     assert migrated_ch.is_active is True

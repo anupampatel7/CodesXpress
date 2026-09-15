@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         description="Second required Telegram channel for referral verification",
     )
     CHANNEL_3: Optional[str] = Field(
-        default="@MULTI_purpose_with_me_sale",
+        default="@Offer_Xpress",
         description="Third required Telegram channel for referral verification",
     )
     CHANNEL_4: Optional[str] = Field(

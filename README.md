@@ -143,7 +143,7 @@ POINTS_PER_REFERRAL=1
 # Required Channels Configuration
 CHANNEL_1=@OfferMate
 CHANNEL_2=@OfferRaider
-CHANNEL_3=@MULTI_purpose_with_me_sale
+CHANNEL_3=@Offer_Xpress
 CHANNEL_4=@offerelite
 
 LOG_LEVEL=INFO

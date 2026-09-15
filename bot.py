@@ -60,32 +60,35 @@ async def seed_initial_channels(session_factory=None) -> None:
 
     factory = session_factory or async_session_factory
     async with factory() as session:
-        # Detect legacy @Grabmint channel record if present and safely migrate to @MULTI_purpose_with_me_sale
+        # Detect legacy channel records (@Grabmint / @MULTI_purpose_with_me_sale) if present and safely migrate to @Offer_Xpress
         stmt_legacy = select(Channel).where(
-            (Channel.channel_id.ilike("%grabmint%")) | (Channel.username.ilike("%grabmint%"))
+            (Channel.channel_id.ilike("%grabmint%"))
+            | (Channel.username.ilike("%grabmint%"))
+            | (Channel.channel_id.ilike("%MULTI_purpose_with_me_sale%"))
+            | (Channel.username.ilike("%MULTI_purpose_with_me_sale%"))
         )
         res_legacy = await session.execute(stmt_legacy)
         legacy_channels = res_legacy.scalars().all()
 
         stmt_new = select(Channel).where(
-            (Channel.channel_id.ilike("%MULTI_purpose_with_me_sale%")) | (Channel.username.ilike("%MULTI_purpose_with_me_sale%"))
+            (Channel.channel_id.ilike("%Offer_Xpress%")) | (Channel.username.ilike("%Offer_Xpress%"))
         )
         res_new = await session.execute(stmt_new)
         new_channel = res_new.scalar_one_or_none()
 
         for legacy_ch in legacy_channels:
             if not new_channel:
-                legacy_ch.channel_id = "@MULTI_purpose_with_me_sale"
-                legacy_ch.username = "MULTI_purpose_with_me_sale"
-                legacy_ch.title = "MULTI_purpose_with_me_sale"
-                legacy_ch.invite_link = "https://t.me/MULTI_purpose_with_me_sale"
+                legacy_ch.channel_id = "@Offer_Xpress"
+                legacy_ch.username = "Offer_Xpress"
+                legacy_ch.title = "Offer_Xpress"
+                legacy_ch.invite_link = "https://t.me/Offer_Xpress"
                 legacy_ch.is_required = True
                 legacy_ch.is_active = True
                 new_channel = legacy_ch
-                logger.info("Migrated legacy @Grabmint channel record to @MULTI_purpose_with_me_sale.")
+                logger.info("Migrated legacy channel record to @Offer_Xpress.")
             else:
                 await session.delete(legacy_ch)
-                logger.info("Removed duplicate legacy @Grabmint channel record.")
+                logger.info("Removed duplicate legacy channel record.")
         if legacy_channels:
             await session.commit()
 

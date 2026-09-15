@@ -321,7 +321,7 @@ async def test_channels_verified_then_device_verification_flow(db_session: Async
     from handlers.device import handle_webapp_verification_data
 
     # 1. Setup channels
-    for ch in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    for ch in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
     await db_session.commit()
 
@@ -396,7 +396,7 @@ async def test_device_verification_failure_cases(db_session: AsyncSession, mock_
     from handlers.device import handle_webapp_verification_data
 
     # Seed 4 channels
-    for ch in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    for ch in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
     await db_session.commit()
 
@@ -458,7 +458,7 @@ async def test_device_check_refresh_flow(db_session: AsyncSession, mock_bot):
     from handlers.device import handle_device_check_refresh
 
     # 1. Setup channels
-    for ch in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    for ch in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
     await db_session.commit()
 
@@ -506,7 +506,7 @@ async def test_webapp_server_push_on_verification_success(db_session: AsyncSessi
     from aiogram.enums import ChatMemberStatus
     from unittest.mock import AsyncMock
 
-    for ch in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    for ch in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(db_session, 123, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
     await db_session.commit()
 
@@ -614,7 +614,7 @@ async def test_admin_device_verification_exemption(db_session: AsyncSession, moc
     assert admin_db_binding is None
 
     # 4. Admin starts bot (/start) -> enters directly without device prompt
-    for ch in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    for ch in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(db_session, admin_tg_id, ch, ch.lstrip("@"), f"https://t.me/{ch.lstrip('@')}", ch.lstrip("@"))
     await db_session.commit()
 

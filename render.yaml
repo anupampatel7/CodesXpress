@@ -22,7 +22,7 @@ services:
       - key: CHANNEL_2
         value: "@OfferRaider"
       - key: CHANNEL_3
-        value: "@MULTI_purpose_with_me_sale"
+        value: "@Offer_Xpress"
       - key: CHANNEL_4
         value: "@offerelite"
       - key: WEBAPP_URL

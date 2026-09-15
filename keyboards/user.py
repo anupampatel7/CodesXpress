@@ -339,7 +339,7 @@ def get_redeem_confirm_keyboard(
 REQUIRED_CHANNEL_ORDER = [
     "@offermate",
     "@offerraider",
-    "@multi_purpose_with_me_sale",
+    "@offer_xpress",
     "@offerelite",
 ]
 

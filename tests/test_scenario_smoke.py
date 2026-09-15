@@ -41,8 +41,8 @@ async def test_full_scenario_smoke_lifecycle(db_session: AsyncSession, mock_bot)
     18. Admin can restock the coupon.
     19. Stock updates correctly.
     """
-    # 0. Setup required channels in DB (@OfferMate, @OfferRaider, @MULTI_purpose_with_me_sale, @offerelite)
-    for ch_name in ["@OfferMate", "@OfferRaider", "@MULTI_purpose_with_me_sale", "@offerelite"]:
+    # 0. Setup required channels in DB (@OfferMate, @OfferRaider, @Offer_Xpress, @offerelite)
+    for ch_name in ["@OfferMate", "@OfferRaider", "@Offer_Xpress", "@offerelite"]:
         await ChannelService.add_channel(
             session=db_session,
             admin_id=999,
