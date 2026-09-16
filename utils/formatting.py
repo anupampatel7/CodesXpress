@@ -1,10 +1,29 @@
 """Master UI formatting and presentation helpers for Codes Xpress 💎."""
 
+import asyncio
 from typing import Optional, List, Any
 from datetime import datetime
 from html import escape
 from models.coupon import Coupon, StockType
 from models.user import User
+
+
+def safe_answer_callback(
+    callback: Any,
+    text: Optional[str] = None,
+    show_alert: bool = False,
+) -> Optional[asyncio.Task]:
+    """Immediately dispatch callback.answer() in background to dismiss button spinner without blocking."""
+    if not callback or not hasattr(callback, "answer"):
+        return None
+
+    async def _do_answer():
+        try:
+            await callback.answer(text=text, show_alert=show_alert)
+        except Exception:
+            pass
+
+    return asyncio.create_task(_do_answer())
 
 
 # =========================================================================

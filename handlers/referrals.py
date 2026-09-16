@@ -10,7 +10,7 @@ from config import settings
 from services.user_service import UserService
 from services.referral_service import ReferralService
 from keyboards.user import get_share_referral_keyboard
-from utils.formatting import format_refer_earn, safe_edit_message
+from utils.formatting import format_refer_earn, safe_edit_message, safe_answer_callback
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ async def handle_refer_and_earn(
     session: AsyncSession,
 ) -> None:
     """Display user referral link and stats."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
+
     from_user = event.from_user
     if not from_user:
         return
@@ -52,10 +55,4 @@ async def handle_refer_and_earn(
 
     kb = get_share_referral_keyboard(settings.BOT_USERNAME, user.referral_code)
 
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, msg_text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, msg_text, reply_markup=kb)
+    await safe_edit_message(event, msg_text, reply_markup=kb)

@@ -17,7 +17,7 @@ from keyboards.user import (
     get_back_to_menu_keyboard,
     MyCouponDetailCallback,
 )
-from utils.formatting import format_balance_card, safe_edit_message
+from utils.formatting import format_balance_card, safe_edit_message, safe_answer_callback
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,9 @@ async def handle_balance(
     session: AsyncSession,
 ) -> None:
     """Display short, clean user balance and summary."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
+
     from_user = event.from_user
     if not from_user:
         return
@@ -58,13 +61,7 @@ async def handle_balance(
     )
     kb = get_balance_keyboard()
 
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, msg_text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, msg_text, reply_markup=kb)
+    await safe_edit_message(event, msg_text, reply_markup=kb)
 
 
 # =========================================================================
@@ -78,6 +75,9 @@ async def handle_my_coupons(
     session: AsyncSession,
 ) -> None:
     """Display list of coupons redeemed by the user directly."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
+
     from_user = event.from_user
     if not from_user:
         return
@@ -119,13 +119,7 @@ async def handle_my_coupons(
             )
         text = "\n".join(text_lines)
 
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, text, reply_markup=kb)
+    await safe_edit_message(event, text, reply_markup=kb)
 
 
 @router.callback_query(MyCouponDetailCallback.filter())
@@ -135,6 +129,7 @@ async def handle_my_coupon_detail(
     session: AsyncSession,
 ) -> None:
     """Display individual redeemed coupon code details."""
+    safe_answer_callback(callback)
     from_user = callback.from_user
     if not from_user:
         await callback.answer("❌ User not found.", show_alert=True)
@@ -175,7 +170,4 @@ async def handle_my_coupon_detail(
             [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
         ]
     )
-    await asyncio.gather(
-        callback.answer(),
-        safe_edit_message(callback, msg, reply_markup=kb),
-    )
+    await safe_edit_message(callback, msg, reply_markup=kb)

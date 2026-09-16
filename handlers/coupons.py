@@ -36,6 +36,7 @@ from utils.formatting import (
     format_coupon_stock_overview,
     format_channel_missing,
     safe_edit_message,
+    safe_answer_callback,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,9 @@ async def handle_coupons_menu(
     session: AsyncSession,
 ) -> None:
     """Display available coupons dynamically based on in-stock inventory."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
+
     coupons, total_count, total_pages = await CouponService.get_available_coupons(session, page=1, per_page=8)
 
     if not coupons:
@@ -68,13 +72,7 @@ async def handle_coupons_menu(
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=1, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, text, reply_markup=kb)
+    await safe_edit_message(event, text, reply_markup=kb)
 
 
 @router.callback_query(BrandNavCallback.filter())
@@ -84,6 +82,7 @@ async def handle_brand_pagination(
     session: AsyncSession,
 ) -> None:
     """Paginate through available coupons."""
+    safe_answer_callback(callback)
     page = max(1, callback_data.page)
     coupons, total_count, total_pages = await CouponService.get_available_coupons(session, page=page, per_page=8)
 
@@ -95,10 +94,7 @@ async def handle_brand_pagination(
         text = "🎁 <b>Available Coupons</b>\n\n✨ Choose a coupon to view details and redeem it."
         kb = get_available_coupons_keyboard(coupons=coupons, page=page, total_pages=total_pages, coupon_stocks=coupon_stocks)
 
-    await asyncio.gather(
-        callback.answer(),
-        safe_edit_message(callback, text, reply_markup=kb),
-    )
+    await safe_edit_message(callback, text, reply_markup=kb)
 
 
 # =========================================================================
@@ -112,17 +108,14 @@ async def handle_check_stock(
     session: AsyncSession,
 ) -> None:
     """Display real-time public coupon stock inventory."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
+
     coupon_stocks = await StockService.get_all_active_coupons_stock(session)
     text = format_coupon_stock_overview(coupon_stocks)
     kb = get_check_stock_keyboard()
 
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, text, reply_markup=kb)
+    await safe_edit_message(event, text, reply_markup=kb)
 
 
 # =========================================================================
@@ -136,6 +129,7 @@ async def handle_coupon_detail(
     session: AsyncSession,
 ) -> None:
     """Display full details of a specific coupon."""
+    safe_answer_callback(callback)
     coupon = await CouponService.get_coupon_by_id(session, callback_data.coupon_id)
     if not coupon or not coupon.is_active:
         await callback.answer("⚠️ This coupon is currently unavailable.", show_alert=True)
@@ -152,10 +146,7 @@ async def handle_coupon_detail(
                 [InlineKeyboardButton(text="🔙 Back", callback_data="menu_coupons")]
             ]
         )
-        await asyncio.gather(
-            callback.answer(),
-            safe_edit_message(callback, msg_text, reply_markup=kb),
-        )
+        await safe_edit_message(callback, msg_text, reply_markup=kb)
         return
 
     msg_text = format_coupon_detail(
@@ -170,10 +161,7 @@ async def handle_coupon_detail(
         can_redeem=True,
     )
 
-    await asyncio.gather(
-        callback.answer(),
-        safe_edit_message(callback, msg_text, reply_markup=kb),
-    )
+    await safe_edit_message(callback, msg_text, reply_markup=kb)
 
 
 # =========================================================================
@@ -187,6 +175,7 @@ async def handle_coupon_confirm(
     session: AsyncSession,
 ) -> None:
     """Show confirmation prompt before executing redemption."""
+    safe_answer_callback(callback)
     from_user = callback.from_user
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if not user:
@@ -201,10 +190,7 @@ async def handle_coupon_confirm(
     if user.points < coupon.points_required:
         insufficient_text = format_insufficient_points(coupon.points_required, user.points)
         kb = get_insufficient_points_keyboard()
-        await asyncio.gather(
-            callback.answer(),
-            safe_edit_message(callback, insufficient_text, reply_markup=kb),
-        )
+        await safe_edit_message(callback, insufficient_text, reply_markup=kb)
         return
 
     confirm_text = format_redeem_confirm_prompt(coupon, user.points)
@@ -215,10 +201,7 @@ async def handle_coupon_confirm(
         page=callback_data.page,
     )
 
-    await asyncio.gather(
-        callback.answer(),
-        safe_edit_message(callback, confirm_text, reply_markup=kb),
-    )
+    await safe_edit_message(callback, confirm_text, reply_markup=kb)
 
 
 # =========================================================================

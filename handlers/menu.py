@@ -15,6 +15,7 @@ from utils.formatting import (
     format_privacy_message,
     format_terms_message,
     safe_edit_message,
+    safe_answer_callback,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ async def handle_menu_home(
     is_admin: bool,
 ) -> None:
     """Return to main menu."""
+    safe_answer_callback(callback)
     from_user = callback.from_user
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if not user:
@@ -43,25 +45,18 @@ async def handle_menu_home(
     welcome_text = format_user_welcome(user, settings.BOT_USERNAME)
     menu_kb = get_main_menu_keyboard(is_admin=is_admin)
 
-    await asyncio.gather(
-        callback.answer(),
-        safe_edit_message(callback, welcome_text, reply_markup=menu_kb),
-    )
+    await safe_edit_message(callback, welcome_text, reply_markup=menu_kb)
 
 
 @router.message(Command("help"))
 @router.callback_query(F.data == "menu_help")
 async def handle_help(event: Message | CallbackQuery) -> None:
     """Show help and guide message."""
+    if isinstance(event, CallbackQuery):
+        safe_answer_callback(event)
     text = format_help_message()
     kb = get_back_to_menu_keyboard()
-    if isinstance(event, CallbackQuery):
-        await asyncio.gather(
-            event.answer(),
-            safe_edit_message(event, text, reply_markup=kb),
-        )
-    else:
-        await safe_edit_message(event, text, reply_markup=kb)
+    await safe_edit_message(event, text, reply_markup=kb)
 
 
 @router.message(Command("privacy"))
@@ -83,4 +78,4 @@ async def handle_terms(message: Message) -> None:
 @router.callback_query(F.data.startswith("noop"))
 async def handle_noop(callback: CallbackQuery) -> None:
     """Handle dummy pagination buttons."""
-    await callback.answer()
+    safe_answer_callback(callback)
