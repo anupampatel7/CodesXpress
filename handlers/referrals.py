@@ -1,5 +1,6 @@
 """Refer & Earn handler showing user referral link and sharing statistics."""
 
+import asyncio
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -23,9 +24,6 @@ async def handle_refer_and_earn(
     session: AsyncSession,
 ) -> None:
     """Display user referral link and stats."""
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
     from_user = event.from_user
     if not from_user:
         return
@@ -54,4 +52,10 @@ async def handle_refer_and_earn(
 
     kb = get_share_referral_keyboard(settings.BOT_USERNAME, user.referral_code)
 
-    await safe_edit_message(event, msg_text, reply_markup=kb)
+    if isinstance(event, CallbackQuery):
+        await asyncio.gather(
+            event.answer(),
+            safe_edit_message(event, msg_text, reply_markup=kb),
+        )
+    else:
+        await safe_edit_message(event, msg_text, reply_markup=kb)

@@ -14,24 +14,41 @@ from utils.formatting import format_channel_diagnostic_error
 
 logger = logging.getLogger(__name__)
 
-
 # Normalized chat_id cache
 _NORMALIZED_CHAT_ID_CACHE: Dict[str, str | int] = {}
+
+# In-memory channels configuration cache: (expiry_monotonic, channels_list)
+_REQUIRED_CHANNELS_CACHE: Tuple[float, List[Channel]] = (0.0, [])
+_CHANNELS_CONFIG_TTL = 300.0  # 5 minutes
+
+
+def invalidate_channel_cache(user_telegram_id: Optional[int] = None) -> None:
+    """Invalidate channel configuration and normalized chat ID caches."""
+    global _REQUIRED_CHANNELS_CACHE
+    _REQUIRED_CHANNELS_CACHE = (0.0, [])
+    _NORMALIZED_CHAT_ID_CACHE.clear()
 
 
 class ChannelService:
     """Service for managing required channels and verifying user membership."""
 
     @staticmethod
-    async def get_required_channels(session: AsyncSession) -> List[Channel]:
-        """Fetch all active channels that require verification."""
+    async def get_required_channels(session: AsyncSession, force_refresh: bool = False) -> List[Channel]:
+        """Fetch all active channels that require verification (cached in memory)."""
+        global _REQUIRED_CHANNELS_CACHE
+        now = time.monotonic()
+        if not force_refresh and now < _REQUIRED_CHANNELS_CACHE[0] and _REQUIRED_CHANNELS_CACHE[1]:
+            return _REQUIRED_CHANNELS_CACHE[1]
+
         stmt = (
             select(Channel)
             .where(Channel.is_active == True, Channel.is_required == True)
             .order_by(Channel.id.asc())
         )
         res = await session.execute(stmt)
-        return list(res.scalars().all())
+        channels = list(res.scalars().all())
+        _REQUIRED_CHANNELS_CACHE = (now + _CHANNELS_CONFIG_TTL, channels)
+        return channels
 
     @staticmethod
     async def get_all_channels(session: AsyncSession) -> List[Channel]:
@@ -57,6 +74,7 @@ class ChannelService:
         username: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Channel]]:
         """Add a new required channel."""
+        invalidate_channel_cache()
         clean_id = channel_id.strip()
         # Check if already exists
         check_stmt = select(Channel).where(Channel.channel_id == clean_id)
@@ -87,6 +105,7 @@ class ChannelService:
     @staticmethod
     async def delete_channel(session: AsyncSession, admin_id: int, channel_pk: int) -> Tuple[bool, str]:
         """Delete a channel by primary key ID."""
+        invalidate_channel_cache()
         channel = await ChannelService.get_channel_by_id(session, channel_pk)
         if not channel:
             return False, "Channel not found."
@@ -108,6 +127,7 @@ class ChannelService:
     @staticmethod
     async def toggle_channel_status(session: AsyncSession, admin_id: int, channel_pk: int) -> Tuple[bool, str]:
         """Toggle active status of a channel."""
+        invalidate_channel_cache()
         channel = await ChannelService.get_channel_by_id(session, channel_pk)
         if not channel:
             return False, "Channel not found."

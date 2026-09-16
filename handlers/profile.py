@@ -1,5 +1,6 @@
 """User balance, redemption history, and coupon voucher details handler."""
 
+import asyncio
 import logging
 from html import escape
 from aiogram import Router, F
@@ -35,9 +36,6 @@ async def handle_balance(
     session: AsyncSession,
 ) -> None:
     """Display short, clean user balance and summary."""
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
     from_user = event.from_user
     if not from_user:
         return
@@ -60,7 +58,13 @@ async def handle_balance(
     )
     kb = get_balance_keyboard()
 
-    await safe_edit_message(event, msg_text, reply_markup=kb)
+    if isinstance(event, CallbackQuery):
+        await asyncio.gather(
+            event.answer(),
+            safe_edit_message(event, msg_text, reply_markup=kb),
+        )
+    else:
+        await safe_edit_message(event, msg_text, reply_markup=kb)
 
 
 # =========================================================================
@@ -74,9 +78,6 @@ async def handle_my_coupons(
     session: AsyncSession,
 ) -> None:
     """Display list of coupons redeemed by the user directly."""
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
     from_user = event.from_user
     if not from_user:
         return
@@ -118,7 +119,13 @@ async def handle_my_coupons(
             )
         text = "\n".join(text_lines)
 
-    await safe_edit_message(event, text, reply_markup=kb)
+    if isinstance(event, CallbackQuery):
+        await asyncio.gather(
+            event.answer(),
+            safe_edit_message(event, text, reply_markup=kb),
+        )
+    else:
+        await safe_edit_message(event, text, reply_markup=kb)
 
 
 @router.callback_query(MyCouponDetailCallback.filter())
@@ -150,8 +157,6 @@ async def handle_my_coupon_detail(
         await callback.answer("❌ Coupon not found.", show_alert=True)
         return
 
-    await callback.answer()
-
     brand = redemption.coupon.brand if redemption.coupon else ""
     title = redemption.coupon.title if redemption.coupon else "Coupon"
     coupon_name = f"{brand} {title}".strip()
@@ -170,4 +175,7 @@ async def handle_my_coupon_detail(
             [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu_home")],
         ]
     )
-    await safe_edit_message(callback, msg, reply_markup=kb)
+    await asyncio.gather(
+        callback.answer(),
+        safe_edit_message(callback, msg, reply_markup=kb),
+    )

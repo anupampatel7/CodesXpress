@@ -1,6 +1,7 @@
 """Device verification callback and WebApp data handler for anti-fraud referral protection."""
 
 import json
+import asyncio
 import logging
 from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery, Message
@@ -88,14 +89,16 @@ async def handle_device_check_refresh(
             bot=bot,
         )
 
-    await callback.answer("✅ Verification confirmed!", show_alert=False)
     welcome_text = (
         format_account_activated()
         + "\n\n"
         + format_user_welcome(user, settings.BOT_USERNAME)
     )
     menu_kb = get_main_menu_keyboard(is_admin=is_admin)
-    await safe_edit_message(callback, welcome_text, reply_markup=menu_kb)
+    await asyncio.gather(
+        callback.answer("✅ Verification confirmed!", show_alert=False),
+        safe_edit_message(callback, welcome_text, reply_markup=menu_kb),
+    )
 
 
 @router.message(F.web_app_data)

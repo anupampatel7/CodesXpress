@@ -1,5 +1,6 @@
 """Main menu navigation, information commands, and static policy displays."""
 
+import asyncio
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -28,7 +29,6 @@ async def handle_menu_home(
     is_admin: bool,
 ) -> None:
     """Return to main menu."""
-    await callback.answer()
     from_user = callback.from_user
     user = await UserService.get_user_by_telegram_id(session, from_user.id)
     if not user:
@@ -43,18 +43,25 @@ async def handle_menu_home(
     welcome_text = format_user_welcome(user, settings.BOT_USERNAME)
     menu_kb = get_main_menu_keyboard(is_admin=is_admin)
 
-    await safe_edit_message(callback, welcome_text, reply_markup=menu_kb)
+    await asyncio.gather(
+        callback.answer(),
+        safe_edit_message(callback, welcome_text, reply_markup=menu_kb),
+    )
 
 
 @router.message(Command("help"))
 @router.callback_query(F.data == "menu_help")
 async def handle_help(event: Message | CallbackQuery) -> None:
     """Show help and guide message."""
-    if isinstance(event, CallbackQuery):
-        await event.answer()
     text = format_help_message()
     kb = get_back_to_menu_keyboard()
-    await safe_edit_message(event, text, reply_markup=kb)
+    if isinstance(event, CallbackQuery):
+        await asyncio.gather(
+            event.answer(),
+            safe_edit_message(event, text, reply_markup=kb),
+        )
+    else:
+        await safe_edit_message(event, text, reply_markup=kb)
 
 
 @router.message(Command("privacy"))

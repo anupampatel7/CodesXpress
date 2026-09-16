@@ -64,6 +64,14 @@ async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
 @pytest_asyncio.fixture
 async def db_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     """Yield a transactional async session rolled back or committed per test."""
+    from services.channel_service import invalidate_channel_cache
+    from services.device_service import invalidate_device_cache
+    from middlewares.auth_middleware import invalidate_ban_cache
+
+    invalidate_channel_cache()
+    invalidate_device_cache()
+    invalidate_ban_cache()
+
     session_factory = async_sessionmaker(
         bind=async_engine,
         class_=AsyncSession,
@@ -74,6 +82,9 @@ async def db_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, 
     async with session_factory() as session:
         yield session
         await session.rollback()
+        invalidate_channel_cache()
+        invalidate_device_cache()
+        invalidate_ban_cache()
 
 
 @pytest.fixture

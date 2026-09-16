@@ -1,5 +1,6 @@
 """Channel membership verification callback handler."""
 
+import asyncio
 import logging
 from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery
@@ -51,7 +52,7 @@ async def handle_channel_verification(
             last_name=from_user.last_name,
         )
 
-    # 1. Check channels via Telegram API first
+    # 1. Check channels via Telegram API first (force_refresh=True ensures authoritative check)
     all_joined, missing = await ChannelService.verify_all_required_channels(
         bot=bot,
         session=session,
@@ -60,31 +61,33 @@ async def handle_channel_verification(
     )
 
     if not all_joined and missing:
-        await callback.answer("⚠️ Please join all required channels.", show_alert=True)
         channel_kb = get_channels_keyboard(missing, is_retry=True)
         missing_text = format_channel_missing(missing)
-        await safe_edit_message(callback, missing_text, reply_markup=channel_kb)
+        await asyncio.gather(
+            callback.answer("⚠️ Please join all required channels.", show_alert=True),
+            safe_edit_message(callback, missing_text, reply_markup=channel_kb),
+        )
         return
 
     # 2. Channels verified! Check if device verification is completed (Admins are exempt)
     is_device_ok = is_admin or await DeviceService.is_device_verified(session, from_user.id)
     if not is_device_ok:
-        await callback.answer("✅ Channels verified! Please verify your device.", show_alert=False)
         device_text = (
             format_channel_verified()
             + "\n\n"
             + format_device_verification_prompt()
         )
-        await safe_edit_message(
-            callback,
-            device_text,
-            reply_markup=get_device_verification_keyboard(),
+        await asyncio.gather(
+            callback.answer("✅ Channels verified! Please verify your device.", show_alert=False),
+            safe_edit_message(
+                callback,
+                device_text,
+                reply_markup=get_device_verification_keyboard(),
+            ),
         )
         return
 
     # 3. Verification fully successful
-    await callback.answer("✅ Verification successful.", show_alert=False)
-
     # Trigger referral fulfillment (awards +1 point to referrer)
     if user.referred_by:
         reward_given, referrer, pts = await ReferralService.process_referral_completion(
@@ -100,4 +103,7 @@ async def handle_channel_verification(
     )
     menu_kb = get_main_menu_keyboard(is_admin=is_admin)
 
-    await safe_edit_message(callback, welcome_text, reply_markup=menu_kb)
+    await asyncio.gather(
+        callback.answer("✅ Verification successful.", show_alert=False),
+        safe_edit_message(callback, welcome_text, reply_markup=menu_kb),
+    )
