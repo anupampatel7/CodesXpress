@@ -21,7 +21,7 @@ from database import init_db, async_session_factory
 from handlers import setup_routers
 from middlewares import DbSessionMiddleware, AuthMiddleware, ChannelMembershipMiddleware
 from models.channel import Channel
-from services.channel_service import ChannelService
+from services.channel_service import ChannelService, invalidate_channel_cache
 from utils.security import mask_secret
 
 # Configure logging
@@ -114,6 +114,7 @@ async def seed_initial_channels(session_factory=None) -> None:
         if added_count > 0:
             await session.commit()
             logger.info(f"Seeded {added_count} new channel(s) from configuration.")
+        invalidate_channel_cache()
 
 
 async def main() -> None:

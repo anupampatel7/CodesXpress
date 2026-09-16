@@ -643,3 +643,82 @@ async def test_legacy_multi_purpose_channel_migration_and_deduplication(db_sessi
     assert migrated_ch.invite_link == "https://t.me/Offer_Xpress"
     assert migrated_ch.is_required is True
     assert migrated_ch.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_cached_channels_cross_session_safety(async_engine):
+    """Regression Test: Channel cache must be session-independent.
+
+    Proves:
+    - channel data can be loaded
+    - originating DB session can close
+    - cached channel data can subsequently be used
+    - accessing channel_id/title/invite_link/etc. never raises DetachedInstanceError
+    - cache hits continue working across different sessions
+    """
+    import database
+    from services.channel_service import ChannelService, invalidate_channel_cache
+    from middlewares.channel_middleware import ChannelMembershipMiddleware
+
+    invalidate_channel_cache()
+
+    # 1. Seed channels in Session 1
+    async with database.async_session_factory() as session1:
+        for ch_name in FOUR_CHANNELS:
+            await ChannelService.add_channel(
+                session=session1,
+                admin_id=123,
+                channel_id=ch_name,
+                title=ch_name.lstrip("@"),
+                invite_link=f"https://t.me/{ch_name.lstrip('@')}",
+                username=ch_name.lstrip("@"),
+            )
+        await session1.commit()
+
+        # Load channels in Session 1 to populate cache
+        cached_channels_1 = await ChannelService.get_required_channels(session1)
+        assert len(cached_channels_1) == 4
+
+    # Session 1 is now CLOSED and out of scope.
+
+    # 2. Access all attributes on cached_channels_1 after originating session is closed
+    for ch in cached_channels_1:
+        assert isinstance(ch.channel_id, str)
+        assert isinstance(ch.title, str)
+        assert isinstance(ch.invite_link, str)
+        assert ch.is_required is True
+        assert ch.is_active is True
+        assert ch.id > 0
+
+    # 3. In Session 2, retrieve channels (hits cache)
+    async with database.async_session_factory() as session2:
+        cached_channels_2 = await ChannelService.get_required_channels(session2)
+        assert len(cached_channels_2) == 4
+        # Verify exact channel IDs
+        ids = [c.channel_id for c in cached_channels_2]
+        assert ids == FOUR_CHANNELS
+
+        # Access attributes inside session2 without DetachedInstanceError
+        for ch in cached_channels_2:
+            _ = ch.channel_id
+            _ = ch.title
+            _ = ch.invite_link
+            _ = ch.username
+            _ = ch.id
+
+    # 4. In Session 3 (or middleware/handlers without active session), verify cache still valid
+    async with database.async_session_factory() as session3:
+        # Verify ChannelService.verify_all_required_channels works on cache hit
+        mock_bot = AsyncMock()
+        class MemberJoined:
+            status = ChatMemberStatus.MEMBER
+        mock_bot.get_chat_member.return_value = MemberJoined()
+
+        all_joined, missing = await ChannelService.verify_all_required_channels(
+            bot=mock_bot,
+            session=session3,
+            user_telegram_id=555666,
+        )
+        assert all_joined is True
+        assert len(missing) == 0
+

@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import time
-from typing import List, Tuple, Optional, Dict
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Dict, Union
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
 from aiogram.exceptions import TelegramAPIError
@@ -14,11 +15,27 @@ from utils.formatting import format_channel_diagnostic_error
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True, slots=True)
+class ChannelDTO:
+    """Immutable, session-independent representation of a required channel."""
+    id: int
+    channel_id: str
+    title: str
+    invite_link: str
+    username: Optional[str] = None
+    is_required: bool = True
+    is_active: bool = True
+
+    def __repr__(self) -> str:
+        return f"<ChannelDTO(id={self.id}, title='{self.title}', channel_id='{self.channel_id}', active={self.is_active})>"
+
+
 # Normalized chat_id cache
 _NORMALIZED_CHAT_ID_CACHE: Dict[str, str | int] = {}
 
-# In-memory channels configuration cache: (expiry_monotonic, channels_list)
-_REQUIRED_CHANNELS_CACHE: Tuple[float, List[Channel]] = (0.0, [])
+# In-memory channels configuration cache: (expiry_monotonic, channels_dto_list)
+_REQUIRED_CHANNELS_CACHE: Tuple[float, List[ChannelDTO]] = (0.0, [])
 _CHANNELS_CONFIG_TTL = 300.0  # 5 minutes
 
 
@@ -33,8 +50,8 @@ class ChannelService:
     """Service for managing required channels and verifying user membership."""
 
     @staticmethod
-    async def get_required_channels(session: AsyncSession, force_refresh: bool = False) -> List[Channel]:
-        """Fetch all active channels that require verification (cached in memory)."""
+    async def get_required_channels(session: AsyncSession, force_refresh: bool = False) -> List[ChannelDTO]:
+        """Fetch all active channels that require verification (cached in memory as session-independent DTOs)."""
         global _REQUIRED_CHANNELS_CACHE
         now = time.monotonic()
         if not force_refresh and now < _REQUIRED_CHANNELS_CACHE[0] and _REQUIRED_CHANNELS_CACHE[1]:
@@ -46,7 +63,18 @@ class ChannelService:
             .order_by(Channel.id.asc())
         )
         res = await session.execute(stmt)
-        channels = list(res.scalars().all())
+        channels = [
+            ChannelDTO(
+                id=c.id,
+                channel_id=c.channel_id,
+                title=c.title,
+                invite_link=c.invite_link,
+                username=c.username,
+                is_required=c.is_required,
+                is_active=c.is_active,
+            )
+            for c in res.scalars().all()
+        ]
         _REQUIRED_CHANNELS_CACHE = (now + _CHANNELS_CONFIG_TTL, channels)
         return channels
 
@@ -164,7 +192,7 @@ class ChannelService:
     @staticmethod
     async def diagnose_channel_setup(
         bot: Bot,
-        channel: Channel,
+        channel: Union[Channel, ChannelDTO],
     ) -> Tuple[bool, str]:
         """Test bot access and admin permissions in a configured channel.
 
@@ -189,7 +217,7 @@ class ChannelService:
     async def check_user_membership(
         bot: Bot,
         user_telegram_id: int,
-        channel: Channel,
+        channel: Union[Channel, ChannelDTO],
     ) -> bool:
         """Verify if a user is currently a member of the given channel.
 
@@ -256,11 +284,11 @@ class ChannelService:
         user_telegram_id: int,
         cache: Optional[dict] = None,
         force_refresh: bool = False,
-    ) -> Tuple[bool, List[Channel]]:
+    ) -> Tuple[bool, List[ChannelDTO]]:
         """Verify that user is a member of all active required channels concurrently.
 
         Returns:
-            Tuple of (all_joined: bool, missing_channels: List[Channel])
+            Tuple of (all_joined: bool, missing_channels: List[ChannelDTO])
         """
         start_time = time.perf_counter()
 
